@@ -29,5 +29,8 @@ class Settings(BaseSettings):
     rag_chunk_size: int = 512
     rag_chunk_overlap: int = 64
 
+    # Data directories (relative to backend/ working directory)
+    data_dir: str = "../data"
+
 
 settings = Settings()

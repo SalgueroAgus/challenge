@@ -1,0 +1,94 @@
+import time
+
+from langchain_core.messages import HumanMessage, SystemMessage
+
+from app.adapters.ollama_adapter import ollama_adapter
+from app.adapters.qdrant_adapter import qdrant_adapter
+from app.core.config import settings
+from app.core.logging import get_logger
+from app.services.embedding_service import embedding_service
+
+logger = get_logger(__name__)
+
+_RAG_SYSTEM_PROMPT = """You are a knowledgeable ornithology assistant specialising in Argentine birds.
+Answer the user's question based strictly on the context provided below.
+Cite the source document and page number when relevant.
+If the context does not contain enough information to answer the question, say:
+"I don't have enough information in the provided documents to answer this question."
+Do not use prior knowledge beyond what is in the context."""
+
+
+def _build_context(hits: list) -> str:
+    parts = []
+    for hit in hits:
+        p = hit.payload or {}
+        header = f"[Source: {p.get('source', 'unknown')}, Page {p.get('page', '?')}]"
+        parts.append(f"{header}\n{p.get('text', '')}")
+    return "\n\n---\n\n".join(parts)
+
+
+class RAGService:
+    async def query(
+        self,
+        query: str,
+        top_k: int | None = None,
+        source_filter: str | None = None,
+    ) -> dict:
+        resolved_top_k = top_k or settings.rag_top_k
+
+        # 1 — embed query
+        query_vector = embedding_service.embed_one(query)
+
+        # 2 — retrieve from Qdrant
+        hits = qdrant_adapter.search(
+            query_vector=query_vector,
+            top_k=resolved_top_k,
+            source_filter=source_filter,
+        )
+
+        if not hits:
+            return {
+                "answer": "No relevant documents found for your query.",
+                "sources": [],
+            }
+
+        # 3 — build grounded prompt
+        context = _build_context(hits)
+        messages = [
+            SystemMessage(content=_RAG_SYSTEM_PROMPT),
+            HumanMessage(content=f"Context:\n{context}\n\nQuestion: {query}"),
+        ]
+
+        # 4 — call LLM (no session — RAG queries are stateless)
+        client = ollama_adapter.get_client()
+        start = time.perf_counter()
+        response = await client.ainvoke(messages)
+        latency_ms = int((time.perf_counter() - start) * 1000)
+
+        logger.info("RAGService.query hits=%d latency_ms=%d", len(hits), latency_ms)
+
+        # 5 — build sources with image URLs
+        sources = []
+        for hit in hits:
+            p = hit.payload or {}
+            image_filenames: list[str] = p.get("image_filenames", [])
+            sources.append(
+                {
+                    "chunk_id": p.get("chunk_id", ""),
+                    "source": p.get("source", ""),
+                    "page": p.get("page"),
+                    "score": round(hit.score, 4),
+                    "text_snippet": p.get("text", "")[:200],
+                    # Relative URLs — frontend resolves against API base URL
+                    "image_urls": [f"/images/{fn}" for fn in image_filenames],
+                }
+            )
+
+        return {
+            "answer": response.content,
+            "sources": sources,
+            "meta": {"latency_ms": latency_ms, "hits": len(hits)},
+        }
+
+
+rag_service = RAGService()

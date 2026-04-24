@@ -19,8 +19,8 @@ dependencies = [
     "qdrant-client>=1.15.1,<2.0.0",
     # Embeddings (used directly, not via qdrant-client extra)
     "fastembed>=0.8.0",
-    # Document loading
-    "pypdf>=5.0.0",
+    # Document loading + image extraction
+    "pymupdf>=1.27.0",
     # HTTP client
     "httpx>=0.28.0",
 ]
