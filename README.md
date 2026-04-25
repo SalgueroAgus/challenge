@@ -143,6 +143,8 @@ Challenge/
 │   │       ├── MessageBubble.tsx   # Markdown rendering, source cards
 │   │       ├── SourceCard.tsx      # Collapsible source with images
 │   │       └── LoadingBubble.tsx
+│   ├── Dockerfile                  # Multi-stage: node build → nginx serve
+│   ├── nginx.conf                  # SPA routing + static asset caching
 │   ├── package.json
 │   └── vite.config.ts
 ├── data/                           # 10 PDFs — Listado de las Aves Argentinas
@@ -266,13 +268,20 @@ make frontend-dev
 
 ### Docker
 
-Bring up the full stack (Qdrant + backend) with one command:
+Bring up the full stack (Qdrant + backend + frontend):
 
 ```bash
-docker compose up
+# First run, or after any source change:
+make up-build
+
+# Subsequent runs (images already built):
+make up
 ```
 
-> **Note:** When running via Docker, the backend connects to Qdrant at `http://qdrant:6333` (set automatically). Ollama must still run on the host machine. Make sure Ollama is running before starting the stack.
+- Frontend → http://localhost
+- Backend API → http://localhost:8000
+
+> **Note:** The frontend image bakes in `VITE_API_BASE_URL=http://localhost:8000` at build time, so the browser talks directly to the backend on your machine. Ollama must still run on the host — make sure it's running before starting the stack.
 
 ---
 

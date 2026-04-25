@@ -20,9 +20,7 @@ async def test_chat_returns_reply():
         new_callable=AsyncMock,
         return_value=mock_result,
     ):
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
                 "/api/v1/chat",
                 json={"message": "What is RAG?", "session_id": "test-session"},
@@ -38,9 +36,7 @@ async def test_chat_returns_reply():
 
 @pytest.mark.asyncio
 async def test_chat_empty_message_is_rejected():
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post("/api/v1/chat", json={"message": ""})
 
     assert response.status_code == 422  # Pydantic validation error
@@ -60,12 +56,8 @@ async def test_chat_generates_session_id_when_omitted():
         new_callable=AsyncMock,
         return_value=mock_result,
     ):
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as client:
-            response = await client.post(
-                "/api/v1/chat", json={"message": "Hi"}
-            )
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post("/api/v1/chat", json={"message": "Hi"})
 
     assert response.status_code == 200
     assert response.json()["session_id"] == "auto-generated-uuid"

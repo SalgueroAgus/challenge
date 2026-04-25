@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     data_dir: str = "../data"
 
     # CORS — space-separated list of allowed frontend origins
-    cors_origins: str = "http://localhost:5173 http://localhost:5174"
+    cors_origins: str = "http://localhost:5173 http://localhost:5174 http://localhost"
 
 
 settings = Settings()

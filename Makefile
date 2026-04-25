@@ -1,8 +1,14 @@
-.PHONY: up down logs dev install lint test ingest frontend-install frontend-dev
+.PHONY: build up up-build down logs dev install lint test ingest frontend-install frontend-dev
 
 ## ── Docker ────────────────────────────────────────────────────────────────────
+build:
+	docker compose build
+
 up:
 	docker compose up -d
+
+up-build:
+	docker compose up --build -d
 
 down:
 	docker compose down

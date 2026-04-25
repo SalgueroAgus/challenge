@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -30,9 +30,7 @@ async def test_rag_query_returns_answer_and_sources():
         new_callable=AsyncMock,
         return_value=_mock_rag_result(),
     ):
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
                 "/api/v1/rag-query",
                 json={"query": "What is Argentina's national bird?"},
@@ -49,9 +47,7 @@ async def test_rag_query_returns_answer_and_sources():
 
 @pytest.mark.asyncio
 async def test_rag_query_empty_string_is_rejected():
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post("/api/v1/rag-query", json={"query": ""})
 
     assert response.status_code == 422
@@ -59,12 +55,8 @@ async def test_rag_query_empty_string_is_rejected():
 
 @pytest.mark.asyncio
 async def test_rag_query_top_k_out_of_range_rejected():
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        response = await client.post(
-            "/api/v1/rag-query", json={"query": "birds", "top_k": 99}
-        )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/api/v1/rag-query", json={"query": "birds", "top_k": 99})
 
     assert response.status_code == 422
 
@@ -76,9 +68,7 @@ async def test_rag_query_with_source_filter():
         new_callable=AsyncMock,
         return_value=_mock_rag_result(),
     ) as mock_query:
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             await client.post(
                 "/api/v1/rag-query",
                 json={"query": "hornero", "source_filter": "birds_part1.pdf"},
