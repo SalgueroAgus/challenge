@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          working-directory: backend
+
+      - name: Install dependencies
+        working-directory: backend
+        run: uv sync
+
+      - name: Lint
+        working-directory: backend
+        run: uv run ruff check .
+
+      - name: Format check
+        working-directory: backend
+        run: uv run ruff format --check .
+
+      - name: Test
+        working-directory: backend
+        run: uv run pytest -v
