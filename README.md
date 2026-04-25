@@ -133,8 +133,19 @@ Challenge/
 │   ├── Dockerfile
 │   ├── pyproject.toml              # Dependencies managed with uv
 │   └── .env.example
-├── frontend/                       # React + Vite (Phase 4)
-├── data/                           # Drop your PDF files here
+├── frontend/
+│   ├── src/
+│   │   ├── App.tsx                 # Tab switcher (Chat / RAG Q&A)
+│   │   ├── types.ts
+│   │   ├── api/client.ts           # Typed fetch wrappers (no direct LLM calls)
+│   │   └── components/
+│   │       ├── ConversationPane.tsx
+│   │       ├── MessageBubble.tsx   # Markdown rendering, source cards
+│   │       ├── SourceCard.tsx      # Collapsible source with images
+│   │       └── LoadingBubble.tsx
+│   ├── package.json
+│   └── vite.config.ts
+├── data/                           # 10 PDFs — Listado de las Aves Argentinas
 ├── docker-compose.yml
 ├── Makefile
 └── README.md
@@ -155,7 +166,7 @@ Challenge/
 | Embeddings | FastEmbed (`BAAI/bge-small-en-v1.5`) | 0.8.x | ~25 MB model, downloads automatically, strong retrieval quality |
 | Vector DB | Qdrant | 1.17.x | Persistent, supports hybrid search & metadata filtering, first-class FastEmbed support |
 | Text splitting | langchain-text-splitters | 1.1.x | Recursive character splitter with configurable overlap |
-| PDF loading | pypdf | 6.x | Lightweight, no Java dependency |
+| PDF loading | PyMuPDF (`fitz`) | 1.27.x | Fast text + image extraction from PDF pages |
 | Validation | Pydantic v2 | 2.13.x | Request/response models + settings management |
 | Frontend | React + Vite | — | Lightweight, fast HMR, no heavyweight framework |
 | Testing | pytest + pytest-asyncio | 9.x / 1.3.x | Async-native test runner |
@@ -242,10 +253,12 @@ make ingest
 # or: cd backend && uv run python scripts/ingest.py
 ```
 
-**8. Start the frontend** *(Phase 4)*
+**8. Start the frontend**
 
 ```bash
-cd frontend && npm install && npm run dev
+make frontend-install   # first time only
+make frontend-dev
+# or: cd frontend && npm install && npm run dev
 # Open http://localhost:5173
 ```
 
@@ -326,22 +339,28 @@ Ask a question grounded in your ingested documents.
 curl -X POST http://localhost:8000/api/v1/rag-query \
   -H "Content-Type: application/json" \
   -d '{
-    "query": "What does chapter 3 say about clean code?",
+    "query": "What is the national bird of Argentina?",
     "top_k": 5
   }'
 ```
 
 ```json
 {
-  "answer": "According to the retrieved documents, chapter 3 discusses...",
+  "answer": "The national bird of Argentina is the Rufous Hornero (Furnarius rufus)...",
   "sources": [
     {
-      "chunk_id": "doc_003_chunk_12",
-      "source": "clean_code_part3.pdf",
-      "page": 3,
-      "score": 0.91
+      "chunk_id": "abc-123",
+      "source": "LISTADO DE LAS AVES ARGENTINAS-1.pdf",
+      "page": 4,
+      "score": 0.92,
+      "text_snippet": "El Hornero (Furnarius rufus) fue declarado ave nacional...",
+      "image_urls": ["/images/LISTADO_DE_LAS_AVES_ARGENTINAS-1_p4_1.jpeg"]
     }
-  ]
+  ],
+  "meta": {
+    "latency_ms": 1840,
+    "hits": 5
+  }
 }
 ```
 
@@ -365,19 +384,23 @@ Place PDF files in the `data/` directory, then run:
 make ingest
 ```
 
-The script:
-1. Loads each PDF with `pypdf`
-2. Splits into chunks (`chunk_size=512`, `overlap=64`) using `RecursiveCharacterTextSplitter`
-3. Embeds each chunk with FastEmbed (`BAAI/bge-small-en-v1.5`)
-4. Stores vectors + metadata in Qdrant collection `documents`
+The script (`scripts/ingest.py`):
+1. Loads each PDF with **PyMuPDF** (`fitz`)
+2. Extracts page text and any embedded images (images &lt; 80×80 px are skipped as decorative noise)
+3. Splits text into chunks (`chunk_size=512`, `overlap=64`) using `RecursiveCharacterTextSplitter`
+4. Embeds each chunk with FastEmbed (`BAAI/bge-small-en-v1.5`, ~25 MB, auto-downloaded)
+5. Stores vectors + metadata in Qdrant collection `documents`
+
+Result for the Argentine Birds corpus: **~1,743 chunks** and **146 extracted images**.
 
 Metadata stored per chunk:
 
 | Field | Description |
 |---|---|
-| `source` | Original filename |
+| `source` | Original PDF filename |
 | `page` | Page number |
-| `chunk_id` | Unique identifier |
+| `chunk_id` | Unique UUID |
+| `image_filenames` | List of images extracted from that page |
 
 ### Retrieval
 
@@ -392,28 +415,52 @@ At query time:
 
 ### RAG System Prompt
 
-The RAG endpoint uses a strict grounding prompt to reduce hallucinations:
+The RAG endpoint (`app/services/rag_service.py`) uses a domain-specific grounding prompt:
 
 ```
-You are a helpful assistant that answers questions strictly based on the provided context.
-If the answer cannot be found in the context, say "I don't have enough information in the
-provided documents to answer this question." Do not use prior knowledge beyond the context.
+You are a knowledgeable ornithology assistant specialising in Argentine birds.
+Answer the user's question based strictly on the context provided below.
+Cite the source document and page number when relevant.
+If the context does not contain enough information to answer the question, say:
+"I don't have enough information in the provided documents to answer this question."
+Do not use prior knowledge beyond what is in the context.
+```
+
+The prompt is constructed as:
+```
+[System prompt above]
 
 Context:
-{retrieved_chunks}
+[Source: filename.pdf, Page N]
+<chunk text>
 
-Question: {user_query}
-Answer:
+---
+
+[Source: filename.pdf, Page M]
+<chunk text>
+
+Question: <user query>
 ```
 
 **Why this reduces hallucinations:**
-- The explicit instruction *"strictly based on the provided context"* suppresses the model's tendency to fill gaps with training data.
-- The fallback phrase *"I don't have enough information"* gives the model a safe exit instead of fabricating an answer.
-- Context is injected before the question so the model attends to it first.
+- **Domain framing** ("ornithology assistant") anchors the model's role and reduces off-topic drift.
+- **"Strictly on the context"** suppresses the model's tendency to fill gaps with training data.
+- **Explicit citation instruction** encourages the model to reference sources, making it auditable.
+- **Named fallback phrase** gives the model a safe, pre-scripted exit instead of fabricating an answer.
+- **Context injected before the question** ensures the model attends to retrieved chunks first.
 
 ### Chat System Prompt
 
-The direct chat endpoint uses a general assistant prompt with few-shot formatting guidance to keep responses concise and structured.
+The direct chat endpoint (`app/services/llm_service.py`) uses a concise general assistant prompt:
+
+```
+You are a knowledgeable and concise assistant.
+Answer questions clearly and accurately based on your training knowledge.
+When you are unsure about something, say so rather than guessing.
+Keep responses focused and to the point — avoid unnecessary padding.
+```
+
+Full conversation history (up to 10 turns) is passed to the model on each request, enabling multi-turn dialogue.
 
 ---
 
@@ -455,9 +502,11 @@ Current test coverage:
 
 | Test | Status |
 |---|---|
-| `test_health.py` — healthcheck returns 200 + ok | ✓ |
-| `test_chat.py` — chat endpoint (Phase 2) | pending |
-| `test_rag.py` — RAG query endpoint (Phase 3) | pending |
+| `test_health.py` — healthcheck returns 200 + `status: ok` | ✓ |
+| `test_chat.py` — reply shape, empty-message rejection (422), session auto-generation | ✓ |
+| `test_rag.py` — answer + sources shape, empty-query rejection (422), `top_k` out-of-range (422), source filter passthrough | ✓ |
+
+Chat and RAG tests mock the service layer so they run without a live Ollama or Qdrant instance.
 
 ---
 
