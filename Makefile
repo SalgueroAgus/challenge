@@ -1,4 +1,4 @@
-.PHONY: up down logs dev install lint test ingest
+.PHONY: up down logs dev install lint test ingest frontend-install frontend-dev
 
 ## ── Docker ────────────────────────────────────────────────────────────────────
 up:
@@ -22,6 +22,13 @@ lint:
 
 test:
 	cd backend && uv run pytest -v
+
+## ── Frontend ──────────────────────────────────────────────────────────────────
+frontend-install:
+	cd frontend && npm install
+
+frontend-dev:
+	cd frontend && npm run dev
 
 ## ── RAG ───────────────────────────────────────────────────────────────────────
 ingest:

@@ -32,5 +32,8 @@ class Settings(BaseSettings):
     # Data directories (relative to backend/ working directory)
     data_dir: str = "../data"
 
+    # CORS — space-separated list of allowed frontend origins
+    cors_origins: str = "http://localhost:5173 http://localhost:5174"
+
 
 settings = Settings()
