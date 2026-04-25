@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.core.logging import get_logger
+from app.core.security import get_current_user
 from app.services.llm_service import llm_service
 
 logger = get_logger(__name__)
@@ -26,7 +27,7 @@ class ChatResponse(BaseModel):
 
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest) -> ChatResponse:
+async def chat(request: ChatRequest, _: str = Depends(get_current_user)) -> ChatResponse:
     try:
         result = await llm_service.chat(
             message=request.message,

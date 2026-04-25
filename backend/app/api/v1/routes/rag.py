@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.core.logging import get_logger
+from app.core.security import get_current_user
 from app.services.rag_service import rag_service
 
 logger = get_logger(__name__)
@@ -35,7 +36,7 @@ class RAGResponse(BaseModel):
 
 
 @router.post("/rag-query", response_model=RAGResponse)
-async def rag_query(request: RAGRequest) -> RAGResponse:
+async def rag_query(request: RAGRequest, _: str = Depends(get_current_user)) -> RAGResponse:
     try:
         result = await rag_service.query(
             query=request.query,

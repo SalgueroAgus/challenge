@@ -35,5 +35,13 @@ class Settings(BaseSettings):
     # CORS — space-separated list of allowed frontend origins
     cors_origins: str = "http://localhost:5173 http://localhost:5174 http://localhost"
 
+    # Auth
+    jwt_secret_key: str = "change-me-in-production"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 1440  # 24 h
+    auth_username: str = "admin"
+    # bcrypt hash of "changeme" — override via AUTH_PASSWORD_HASH in .env
+    auth_password_hash: str = "$2b$12$IO/CRwLA7Lg2.PfR47Drgu2XGNhtKsR1zm0RYaG4sJoDwSzxhA6Zi"
+
 
 settings = Settings()
