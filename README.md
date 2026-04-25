@@ -285,6 +285,105 @@ make up
 
 ---
 
+## Authentication
+
+The chat and RAG endpoints are protected with JWT Bearer tokens. The healthcheck is public.
+
+**Default credentials** (set in `backend/.env`):
+
+| Variable | Default |
+|---|---|
+| `AUTH_USERNAME` | `admin` |
+| Password | `changeme` |
+| `JWT_SECRET_KEY` | `change-me-in-production` |
+
+> Change these before any real deployment. Generate a secret with `openssl rand -hex 32` and a new password hash with `make hash-password`.
+
+### Frontend design decision
+
+The frontend hardcodes the service account credentials in `src/api/client.ts` and automatically exchanges them for a JWT on the first request. This is a **conscious tradeoff**: in a production app the frontend would show a login screen so the user supplies the password and no secret ever lives in client-side code. For this demo we skip the login screen to keep the UI simple — the credentials are visible to anyone who reads the bundle.
+
+The API still enforces JWT auth for every caller that isn't the frontend (curl, Postman, external integrations). That is where the security boundary actually matters for this challenge.
+
+### Get a token
+
+```bash
+curl -X POST http://localhost:8000/api/v1/auth/token \
+  -d "username=admin&password=changeme"
+```
+
+```json
+{ "access_token": "<jwt>", "token_type": "bearer" }
+```
+
+### Use the token
+
+Pass it as a Bearer header on every subsequent request:
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8000/api/v1/auth/token \
+  -d "username=admin&password=changeme" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+curl -X POST http://localhost:8000/api/v1/chat \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Hello"}'
+```
+
+### Testing auth manually
+
+**Step 1 — store a token in a shell variable:**
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8000/api/v1/auth/token \
+  -d "username=admin&password=changeme" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+echo $TOKEN   # should print a long JWT string
+```
+
+**Step 2 — working cases (expect 200):**
+
+```bash
+# Chat with valid token
+curl -i -X POST http://localhost:8000/api/v1/chat \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Hello"}'
+
+# RAG with valid token
+curl -i -X POST http://localhost:8000/api/v1/rag-query \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "What birds live in Argentina?"}'
+
+# Healthcheck requires no token
+curl -i http://localhost:8000/api/v1/healthcheck
+```
+
+**Step 3 — failing cases (expect 401):**
+
+```bash
+# No token
+curl -i -X POST http://localhost:8000/api/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Hello"}'
+
+# Wrong password → token request fails
+curl -i -X POST http://localhost:8000/api/v1/auth/token \
+  -d "username=admin&password=wrongpassword"
+
+# Malformed token
+curl -i -X POST http://localhost:8000/api/v1/chat \
+  -H "Authorization: Bearer thisisnotavalidtoken" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Hello"}'
+```
+
+> The `-i` flag prints the HTTP status line (`HTTP/1.1 401 Unauthorized`) at the top of the response so you can confirm the code without reading the body.
+
+---
+
 ## API Reference
 
 ### `GET /api/v1/healthcheck`

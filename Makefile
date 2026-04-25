@@ -1,4 +1,4 @@
-.PHONY: build up up-build down logs dev install lint test ingest frontend-install frontend-dev
+.PHONY: build up up-build down logs dev install lint test ingest frontend-install frontend-dev hash-password
 
 ## ── Docker ────────────────────────────────────────────────────────────────────
 build:
@@ -35,6 +35,11 @@ frontend-install:
 
 frontend-dev:
 	cd frontend && npm run dev
+
+## ── Auth ──────────────────────────────────────────────────────────────────────
+hash-password:
+	@read -p "Password: " pw && cd backend && uv run python -c \
+	"import bcrypt, sys; print(bcrypt.hashpw(sys.argv[1].encode(), bcrypt.gensalt()).decode())" "$$pw"
 
 ## ── RAG ───────────────────────────────────────────────────────────────────────
 ingest:

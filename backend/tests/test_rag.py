@@ -24,7 +24,7 @@ def _mock_rag_result(answer: str = "The Rufous Hornero is Argentina's national b
 
 
 @pytest.mark.asyncio
-async def test_rag_query_returns_answer_and_sources():
+async def test_rag_query_returns_answer_and_sources(auth_headers):
     with patch(
         "app.api.v1.routes.rag.rag_service.query",
         new_callable=AsyncMock,
@@ -34,6 +34,7 @@ async def test_rag_query_returns_answer_and_sources():
             response = await client.post(
                 "/api/v1/rag-query",
                 json={"query": "What is Argentina's national bird?"},
+                headers=auth_headers,
             )
 
     assert response.status_code == 200
@@ -46,23 +47,27 @@ async def test_rag_query_returns_answer_and_sources():
 
 
 @pytest.mark.asyncio
-async def test_rag_query_empty_string_is_rejected():
+async def test_rag_query_empty_string_is_rejected(auth_headers):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post("/api/v1/rag-query", json={"query": ""})
+        response = await client.post(
+            "/api/v1/rag-query", json={"query": ""}, headers=auth_headers
+        )
 
     assert response.status_code == 422
 
 
 @pytest.mark.asyncio
-async def test_rag_query_top_k_out_of_range_rejected():
+async def test_rag_query_top_k_out_of_range_rejected(auth_headers):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post("/api/v1/rag-query", json={"query": "birds", "top_k": 99})
+        response = await client.post(
+            "/api/v1/rag-query", json={"query": "birds", "top_k": 99}, headers=auth_headers
+        )
 
     assert response.status_code == 422
 
 
 @pytest.mark.asyncio
-async def test_rag_query_with_source_filter():
+async def test_rag_query_with_source_filter(auth_headers):
     with patch(
         "app.api.v1.routes.rag.rag_service.query",
         new_callable=AsyncMock,
@@ -72,6 +77,7 @@ async def test_rag_query_with_source_filter():
             await client.post(
                 "/api/v1/rag-query",
                 json={"query": "hornero", "source_filter": "birds_part1.pdf"},
+                headers=auth_headers,
             )
 
     mock_query.assert_called_once_with(
