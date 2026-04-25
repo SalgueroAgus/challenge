@@ -21,14 +21,15 @@ build/
 .pytest_cache/
 .mypy_cache/
 
-# uv
-uv.lock
+# uv artifacts (lock file is intentionally committed)
+.uv/
 
 # Qdrant local storage
 qdrant_storage/
 
 # Vector DB data
 data/qdrant/
+data/images
 
 # IDE
 .vscode/
@@ -41,3 +42,7 @@ logs/
 # Test coverage
 .coverage
 htmlcov/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
