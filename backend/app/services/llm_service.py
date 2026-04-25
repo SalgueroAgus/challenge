@@ -34,7 +34,7 @@ def _trim_session(messages: list[BaseMessage]) -> None:
     history = messages[1:]
     if len(history) > _MAX_TURNS * 2:
         messages.clear()
-        messages.extend(system + history[-((_MAX_TURNS * 2)):])
+        messages.extend(system + history[-(_MAX_TURNS * 2) :])
 
 
 class LLMService:

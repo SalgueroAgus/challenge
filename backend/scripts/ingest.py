@@ -33,12 +33,14 @@ IMAGES_DIR = DATA_DIR / "images"
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── Constants ──────────────────────────────────────────────────────────────────
-VECTOR_SIZE = 384           # BAAI/bge-small-en-v1.5 output dimensions
-BATCH_SIZE = 32             # chunks per Qdrant upsert call
-MIN_TEXT_LENGTH = 30        # skip chunks shorter than this (noise)
+VECTOR_SIZE = 384  # BAAI/bge-small-en-v1.5 output dimensions
+BATCH_SIZE = 32  # chunks per Qdrant upsert call
+MIN_TEXT_LENGTH = 30  # skip chunks shorter than this (noise)
 
 
-def extract_page_images(doc: fitz.Document, page: fitz.Page, page_num: int, pdf_stem: str) -> list[str]:
+def extract_page_images(
+    doc: fitz.Document, page: fitz.Page, page_num: int, pdf_stem: str
+) -> list[str]:
     """Extract all images from a PDF page, save to IMAGES_DIR, return filenames."""
     filenames = []
     for img_idx, img_info in enumerate(page.get_images(full=True)):
@@ -96,7 +98,8 @@ def process_pdf(pdf_path: Path, splitter: RecursiveCharacterTextSplitter) -> lis
             )
 
     doc.close()
-    logger.info("  → %d chunks, %d images", len(chunks), sum(len(c["image_filenames"]) for c in chunks))
+    image_count = sum(len(c["image_filenames"]) for c in chunks)
+    logger.info("  → %d chunks, %d images", len(chunks), image_count)
     return chunks
 
 
@@ -162,7 +165,8 @@ def main() -> None:
         texts = [c["text"] for c in batch]
         vectors = embed_svc.embed_batch(texts)
         upsert_batch(client, batch, vectors)
-        logger.info("Upserted batch %d/%d", min(i + BATCH_SIZE, len(all_chunks)), len(all_chunks))
+        upserted = min(i + BATCH_SIZE, len(all_chunks))
+        logger.info("Upserted batch %d/%d", upserted, len(all_chunks))
 
     logger.info("Ingestion complete. %d chunks stored in Qdrant.", len(all_chunks))
 

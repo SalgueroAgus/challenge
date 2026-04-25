@@ -19,7 +19,7 @@ class OllamaAdapter:
         return ChatOllama(
             base_url=self._base_url,
             model=resolved,
-            num_ctx=2048,   # halves KV-cache footprint vs default 4096
+            num_ctx=2048,  # halves KV-cache footprint vs default 4096
             reasoning=False,  # qwen3 thinks by default; disable for speed
         )
 

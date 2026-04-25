@@ -10,12 +10,14 @@ from app.services.embedding_service import embedding_service
 
 logger = get_logger(__name__)
 
-_RAG_SYSTEM_PROMPT = """You are a knowledgeable ornithology assistant specialising in Argentine birds.
-Answer the user's question based strictly on the context provided below.
-Cite the source document and page number when relevant.
-If the context does not contain enough information to answer the question, say:
-"I don't have enough information in the provided documents to answer this question."
-Do not use prior knowledge beyond what is in the context."""
+_RAG_SYSTEM_PROMPT = (
+    "You are a knowledgeable ornithology assistant specialising in Argentine birds.\n"
+    "Answer the user's question based strictly on the context provided below.\n"
+    "Cite the source document and page number when relevant.\n"
+    "If the context does not contain enough information to answer the question, say:\n"
+    '"I don\'t have enough information in the provided documents to answer this question."\n'
+    "Do not use prior knowledge beyond what is in the context."
+)
 
 
 def _build_context(hits: list) -> str:
@@ -50,6 +52,7 @@ class RAGService:
             return {
                 "answer": "No relevant documents found for your query.",
                 "sources": [],
+                "meta": {"latency_ms": 0, "hits": 0},
             }
 
         # 3 — build grounded prompt
@@ -79,7 +82,6 @@ class RAGService:
                     "page": p.get("page"),
                     "score": round(hit.score, 4),
                     "text_snippet": p.get("text", "")[:200],
-                    # Relative URLs — frontend resolves against API base URL
                     "image_urls": [f"/images/{fn}" for fn in image_filenames],
                 }
             )
