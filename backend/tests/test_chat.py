@@ -38,9 +38,7 @@ async def test_chat_returns_reply(auth_headers):
 @pytest.mark.asyncio
 async def test_chat_empty_message_is_rejected(auth_headers):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post(
-            "/api/v1/chat", json={"message": ""}, headers=auth_headers
-        )
+        response = await client.post("/api/v1/chat", json={"message": ""}, headers=auth_headers)
 
     assert response.status_code == 422
 

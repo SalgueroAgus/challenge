@@ -49,9 +49,7 @@ async def test_rag_query_returns_answer_and_sources(auth_headers):
 @pytest.mark.asyncio
 async def test_rag_query_empty_string_is_rejected(auth_headers):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post(
-            "/api/v1/rag-query", json={"query": ""}, headers=auth_headers
-        )
+        response = await client.post("/api/v1/rag-query", json={"query": ""}, headers=auth_headers)
 
     assert response.status_code == 422
 

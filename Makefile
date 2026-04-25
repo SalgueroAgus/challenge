@@ -1,4 +1,4 @@
-.PHONY: build up up-build down logs dev install lint test ingest frontend-install frontend-dev hash-password
+.PHONY: build up up-build down logs dev install lint test ingest frontend-install frontend-dev hash-password install-hooks
 
 ## ── Docker ────────────────────────────────────────────────────────────────────
 build:
@@ -17,8 +17,12 @@ logs:
 	docker compose logs -f
 
 ## ── Backend (local dev) ───────────────────────────────────────────────────────
-install:
+install: install-hooks
 	cd backend && uv sync
+
+install-hooks:
+	ln -sf ../../scripts/pre-push.sh .git/hooks/pre-push
+	@echo "pre-push hook installed"
 
 dev:
 	cd backend && uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000

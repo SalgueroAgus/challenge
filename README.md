@@ -219,6 +219,8 @@ make install
 # or: cd backend && uv sync
 ```
 
+> `make install` also installs the pre-push git hook that runs lint + tests locally before every push.
+
 **4. Configure environment**
 
 ```bash
