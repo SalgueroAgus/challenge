@@ -2,10 +2,10 @@ import time
 import uuid
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langfuse.decorators import langfuse_context, observe
 
 from app.adapters.llm_adapter import active_model, get_llm
 from app.core.logging import get_logger
-from app.core.observability import start_trace
 
 logger = get_logger(__name__)
 
@@ -20,6 +20,23 @@ _sessions: dict[str, list[BaseMessage]] = {}
 
 # Prevent unbounded memory growth — trim oldest human/ai pairs beyond this limit.
 _MAX_TURNS = 10
+
+
+def _msg_to_dict(m: BaseMessage) -> dict:
+    role_map = {"SystemMessage": "system", "HumanMessage": "user", "AIMessage": "assistant"}
+    return {"role": role_map.get(type(m).__name__, "user"), "content": m.content}
+
+
+@observe(as_type="generation")
+async def _invoke_history(messages: list[BaseMessage], model: str | None = None) -> str:
+    langfuse_context.update_current_observation(
+        model=active_model(model),
+        input=[_msg_to_dict(m) for m in messages],
+    )
+    response = await get_llm(model).ainvoke(messages)
+    text = response.content
+    langfuse_context.update_current_observation(output=text)
+    return text
 
 
 def _get_or_create_session(session_id: str) -> list[BaseMessage]:
@@ -38,6 +55,7 @@ def _trim_session(messages: list[BaseMessage]) -> None:
 
 
 class LLMService:
+    @observe(name="chat")
     async def chat(
         self,
         message: str,
@@ -45,29 +63,28 @@ class LLMService:
         model_name: str | None = None,
     ) -> dict:
         sid = session_id or str(uuid.uuid4())
+        resolved_model = active_model(model_name)
         history = _get_or_create_session(sid)
-
         history.append(HumanMessage(content=message))
 
-        client = get_llm(model_name)
-        resolved_model = active_model(model_name)
+        langfuse_context.update_current_trace(session_id=sid)
+        langfuse_context.update_current_observation(
+            input=message, metadata={"model": resolved_model}
+        )
 
         logger.info("LLMService.chat session=%s model=%s", sid, resolved_model)
 
-        tracer = start_trace("chat", model=resolved_model, input_messages=history, session_id=sid)
-
         start = time.perf_counter()
-        response = await client.ainvoke(history)
+        reply = await _invoke_history(history, model_name)
         latency_ms = int((time.perf_counter() - start) * 1000)
 
-        if tracer:
-            tracer.finish(output=response.content, latency_ms=latency_ms)
-
-        history.append(AIMessage(content=response.content))
+        history.append(AIMessage(content=reply))
         _trim_session(history)
 
+        langfuse_context.update_current_observation(output=reply)
+
         return {
-            "reply": response.content,
+            "reply": reply,
             "session_id": sid,
             "model": resolved_model,
             "meta": {"latency_ms": latency_ms},
