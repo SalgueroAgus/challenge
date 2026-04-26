@@ -2,7 +2,7 @@ import time
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.adapters.ollama_adapter import ollama_adapter
+from app.adapters.llm_adapter import active_model, get_llm
 from app.adapters.qdrant_adapter import qdrant_adapter
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -64,8 +64,8 @@ class RAGService:
         ]
 
         # 4 — call LLM (no session — RAG queries are stateless)
-        client = ollama_adapter.get_client()
-        tracer = start_trace("rag-query", model=settings.ollama_model, input_messages=messages)
+        client = get_llm()
+        tracer = start_trace("rag-query", model=active_model(), input_messages=messages)
 
         start = time.perf_counter()
         response = await client.ainvoke(messages)

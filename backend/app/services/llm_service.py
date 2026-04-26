@@ -3,8 +3,7 @@ import uuid
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
-from app.adapters.ollama_adapter import ollama_adapter
-from app.core.config import settings
+from app.adapters.llm_adapter import active_model, get_llm
 from app.core.logging import get_logger
 from app.core.observability import start_trace
 
@@ -50,8 +49,8 @@ class LLMService:
 
         history.append(HumanMessage(content=message))
 
-        client = ollama_adapter.get_client(model_name)
-        resolved_model = model_name or settings.ollama_model
+        client = get_llm(model_name)
+        resolved_model = active_model(model_name)
 
         logger.info("LLMService.chat session=%s model=%s", sid, resolved_model)
 

@@ -13,9 +13,16 @@ class Settings(BaseSettings):
     app_env: str = "development"
     app_version: str = "0.1.0"
 
-    # Ollama
+    # LLM provider — "ollama" (local) or "groq" (cloud free tier)
+    llm_provider: str = "ollama"
+
+    # Ollama (used when LLM_PROVIDER=ollama)
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen3.5:4b"
+
+    # Groq (used when LLM_PROVIDER=groq)
+    groq_api_key: str = ""
+    groq_model: str = "llama-3.3-70b-versatile"
 
     # Qdrant
     qdrant_url: str = "http://localhost:6333"
