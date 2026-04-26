@@ -97,6 +97,7 @@ def _is_status_line(line: str) -> bool:
 
 # ── Page index ─────────────────────────────────────────────────────────────────
 
+
 def _build_page_index(pdf_paths: list[Path]) -> tuple[str, list[int], list[tuple]]:
     """
     Concatenate clean text from all pages across all given PDFs in order.
@@ -151,6 +152,7 @@ def _images_for_span(
 
 # ── Descriptive parser (vols 1-9) ─────────────────────────────────────────────
 
+
 def parse_descriptive_pdfs(
     pdf_paths: list[Path], splitter: RecursiveCharacterTextSplitter
 ) -> list[dict]:
@@ -164,10 +166,7 @@ def parse_descriptive_pdfs(
     all_matches = list(_SPECIES_RE.finditer(full_text))
 
     # Drop the legend row that appears in the introduction ("NOMBRE COMÚN | Nombre científico")
-    matches = [
-        m for m in all_matches
-        if m.group(1).strip().upper() != "NOMBRE COMÚN"
-    ]
+    matches = [m for m in all_matches if m.group(1).strip().upper() != "NOMBRE COMÚN"]
 
     logger.info("Found %d species headers across descriptive volumes", len(matches))
 
@@ -191,24 +190,25 @@ def parse_descriptive_pdfs(
             sub = sub.strip()
             if len(sub) < MIN_TEXT_LENGTH:
                 continue
-            chunks.append({
-                "text": sub,
-                "common_name": common_name,
-                "scientific_name": scientific_name,
-                "status": status,
-                "source": source,
-                "page": page,
-                "chunk_id": str(uuid.uuid4()),
-                "image_filenames": images,
-            })
+            chunks.append(
+                {
+                    "text": sub,
+                    "common_name": common_name,
+                    "scientific_name": scientific_name,
+                    "status": status,
+                    "source": source,
+                    "page": page,
+                    "chunk_id": str(uuid.uuid4()),
+                    "image_filenames": images,
+                }
+            )
 
-    logger.info(
-        "Descriptive volumes → %d chunks from %d species", len(chunks), len(matches)
-    )
+    logger.info("Descriptive volumes → %d chunks from %d species", len(chunks), len(matches))
     return chunks
 
 
 # ── Checklist parser (vol 10) ─────────────────────────────────────────────────
+
 
 def parse_checklist_pdf(pdf_path: Path) -> list[dict]:
     """
@@ -265,24 +265,27 @@ def parse_checklist_pdf(pdf_path: Path) -> list[dict]:
         if status:
             text += f" [{status}]"
 
-        chunks.append({
-            "text": text,
-            "common_name": spanish,
-            "scientific_name": scientific,
-            "english_name": english,
-            "status": status,
-            "number": number,
-            "source": pdf_path.name,
-            "page": 1,
-            "chunk_id": str(uuid.uuid4()),
-            "image_filenames": [],
-        })
+        chunks.append(
+            {
+                "text": text,
+                "common_name": spanish,
+                "scientific_name": scientific,
+                "english_name": english,
+                "status": status,
+                "number": number,
+                "source": pdf_path.name,
+                "page": 1,
+                "chunk_id": str(uuid.uuid4()),
+                "image_filenames": [],
+            }
+        )
 
     logger.info("Checklist %s → %d entries", pdf_path.name, len(chunks))
     return chunks
 
 
 # ── Qdrant helpers ─────────────────────────────────────────────────────────────
+
 
 def recreate_collection(client: QdrantClient, vector_size: int) -> None:
     name = settings.qdrant_collection_name
@@ -317,6 +320,7 @@ def upsert_batch(
 
 # ── Volume classification ──────────────────────────────────────────────────────
 
+
 def _is_checklist(pdf_path: Path) -> bool:
     """Detect the reference checklist volume by the absence of pipe-based species headers."""
     doc = fitz.open(str(pdf_path))
@@ -326,6 +330,7 @@ def _is_checklist(pdf_path: Path) -> bool:
 
 
 # ── Entry point ────────────────────────────────────────────────────────────────
+
 
 def main() -> None:
     pdf_files = sorted(DATA_DIR.glob("*.pdf"))

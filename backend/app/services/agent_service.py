@@ -125,8 +125,11 @@ async def retrieve_node(state: AgentState) -> dict:
     langfuse_context.update_current_observation(
         input=state["current_query"],
         output=[
-            {"source": h.payload.get("source"), "page": h.payload.get("page"),
-             "score": round(h.score, 4)}
+            {
+                "source": h.payload.get("source"),
+                "page": h.payload.get("page"),
+                "score": round(h.score, 4),
+            }
             for h in hits
         ],
         metadata={"hits": len(hits)},
