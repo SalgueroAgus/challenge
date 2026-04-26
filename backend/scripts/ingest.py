@@ -32,8 +32,6 @@ DATA_DIR = Path(settings.data_dir)
 IMAGES_DIR = DATA_DIR / "images"
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 
-# ── Constants ──────────────────────────────────────────────────────────────────
-VECTOR_SIZE = 384  # BAAI/bge-small-en-v1.5 output dimensions
 BATCH_SIZE = 32  # chunks per Qdrant upsert call
 MIN_TEXT_LENGTH = 30  # skip chunks shorter than this (noise)
 
@@ -103,7 +101,7 @@ def process_pdf(pdf_path: Path, splitter: RecursiveCharacterTextSplitter) -> lis
     return chunks
 
 
-def recreate_collection(client: QdrantClient) -> None:
+def recreate_collection(client: QdrantClient, vector_size: int) -> None:
     """Drop and recreate the Qdrant collection (clean re-ingest)."""
     name = settings.qdrant_collection_name
     existing = {c.name for c in client.get_collections().collections}
@@ -113,10 +111,10 @@ def recreate_collection(client: QdrantClient) -> None:
 
     client.create_collection(
         collection_name=name,
-        vectors_config={"dense": VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE)},
+        vectors_config={"dense": VectorParams(size=vector_size, distance=Distance.COSINE)},
         sparse_vectors_config={"sparse": SparseVectorParams()},
     )
-    logger.info("Created collection '%s' (dim=%d, cosine + BM25 sparse)", name, VECTOR_SIZE)
+    logger.info("Created collection '%s' (dim=%d, cosine + BM25 sparse)", name, vector_size)
 
 
 def upsert_batch(
@@ -158,7 +156,9 @@ def main() -> None:
     sparse_embed_svc = SparseEmbeddingService()
     client = QdrantClient(url=settings.qdrant_url)
 
-    recreate_collection(client)
+    vector_size = len(embed_svc.embed_one("probe"))
+    logger.info("Detected vector size: %d", vector_size)
+    recreate_collection(client, vector_size)
 
     all_chunks: list[dict] = []
     for pdf_path in pdf_files:

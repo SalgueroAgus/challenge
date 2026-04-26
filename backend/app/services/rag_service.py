@@ -74,7 +74,7 @@ class RAGService:
                     "source": p.get("source", ""),
                     "page": p.get("page"),
                     "score": round(hit.score, 4),
-                    "text_snippet": p.get("text", "")[:200],
+                    "text_snippet": p.get("text", "")[:400],
                     "image_urls": [f"/images/{fn}" for fn in image_filenames],
                 }
             )

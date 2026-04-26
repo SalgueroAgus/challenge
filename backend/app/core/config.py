@@ -32,9 +32,9 @@ class Settings(BaseSettings):
     embed_model: str = "BAAI/bge-small-en-v1.5"
 
     # RAG
-    rag_top_k: int = 5
-    rag_chunk_size: int = 512
-    rag_chunk_overlap: int = 64
+    rag_top_k: int = 8
+    rag_chunk_size: int = 1200
+    rag_chunk_overlap: int = 200
 
     # Data directories (relative to backend/ working directory)
     data_dir: str = "../data"
