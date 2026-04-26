@@ -20,6 +20,7 @@ Built as a technical challenge to demonstrate GenAI development, API design, and
 - [Prompt Engineering](#prompt-engineering)
 - [Configuration](#configuration)
 - [Testing](#testing)
+- [Observability — LangFuse](#observability--langfuse)
 - [Cloud Deployment](#cloud-deployment)
 - [GenAI Coding Assistants](#genai-coding-assistants)
 
@@ -411,14 +412,17 @@ curl http://localhost:8000/api/v1/healthcheck
 
 Chat with the LLM directly. Supports multi-turn conversation via `session_id`.
 
-```bash
-curl -X POST http://localhost:8000/api/v1/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "message": "What is retrieval-augmented generation?",
-    "session_id": "user-abc-123"
-  }'
-```
+> Requires a Bearer token — see [Authentication](#authentication) for how to obtain one.
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `message` | string | ✓ | User prompt |
+| `session_id` | string | — | Groups messages into a conversation |
+| `model_name` | string | — | Override the default model |
+
+**Response:**
 
 ```json
 {
@@ -431,28 +435,23 @@ curl -X POST http://localhost:8000/api/v1/chat \
 }
 ```
 
-**Request body:**
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `message` | string | ✓ | User prompt |
-| `session_id` | string | — | Groups messages into a conversation |
-| `model_name` | string | — | Override the default model |
-
 ---
 
 ### `POST /api/v1/rag-query`
 
 Ask a question grounded in your ingested documents.
 
-```bash
-curl -X POST http://localhost:8000/api/v1/rag-query \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "What is the national bird of Argentina?",
-    "top_k": 5
-  }'
-```
+> Requires a Bearer token — see [Authentication](#authentication) for how to obtain one.
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `query` | string | ✓ | User question |
+| `top_k` | int | — | Number of chunks to retrieve (default: 5) |
+| `source_filter` | string | — | Filter by document filename |
+
+**Response:**
 
 ```json
 {
@@ -473,14 +472,6 @@ curl -X POST http://localhost:8000/api/v1/rag-query \
   }
 }
 ```
-
-**Request body:**
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `query` | string | ✓ | User question |
-| `top_k` | int | — | Number of chunks to retrieve (default: 5) |
-| `source_filter` | string | — | Filter by document filename |
 
 ---
 
@@ -617,6 +608,74 @@ Current test coverage:
 | `test_rag.py` — answer + sources shape, empty-query rejection (422), `top_k` out-of-range (422), source filter passthrough | ✓ |
 
 Chat and RAG tests mock the service layer so they run without a live Ollama or Qdrant instance.
+
+---
+
+## Observability — LangFuse
+
+LangFuse is integrated for end-to-end tracing of every LLM call — both direct chat and RAG queries. Each trace captures the full prompt, the model response, latency, and the session ID, visible in the LangFuse dashboard.
+
+**Tracing is optional.** If `LANGFUSE_PUBLIC_KEY` is empty the app runs normally with no tracing. No exception is raised.
+
+### Start LangFuse (self-hosted, no account needed)
+
+LangFuse is included in `docker-compose.yml`. Run the full stack:
+
+```bash
+docker compose up -d
+```
+
+Then visit **http://localhost:3000** and complete the one-time setup:
+
+1. Click **Sign Up** and create a local account (stored in the Postgres container — no external service involved).
+2. Create an **organisation** and a **project** (any name, e.g. `aves-argentinas`).
+3. Go to **Settings → API Keys** and click **Create new API key**.
+4. Copy the **Public Key** and **Secret Key**.
+
+### Configure the backend
+
+Paste the keys into `backend/.env`:
+
+```env
+LANGFUSE_PUBLIC_KEY=pk-lf-...
+LANGFUSE_SECRET_KEY=sk-lf-...
+LANGFUSE_HOST=http://localhost:3000
+```
+
+Restart the backend:
+
+```bash
+make dev
+# or: docker compose up -d --build backend
+```
+
+### What gets traced
+
+| Trace name | Triggered by | Data captured |
+|---|---|---|
+| `chat` | `POST /api/v1/chat` | Session ID, full message history sent to the model, model reply, wall-clock latency |
+| `rag-query` | `POST /api/v1/rag-query` | System prompt + all retrieved chunks injected as context, model answer, wall-clock latency |
+
+### Exploring the dashboard
+
+Open **http://localhost:3000 → Tracing → Traces** after making a few requests.
+
+**Traces list** — one row per API call, named `chat` or `rag-query`. Click any row to drill in.
+
+**Inside a trace** — you'll see the `llm-call` generation with:
+- **Input**: the exact messages array sent to the model (system prompt, conversation history or RAG context, user query)
+- **Output**: the raw model reply
+- **Latency**: wall-clock time for the LLM call
+
+**Latency breakdown (from real runs):**
+- `chat` — p50 ~1–2 s, p90 ~7 s (grows with conversation length as history accumulates)
+- `rag-query` — p50 ~30–35 s (embedding + Qdrant retrieval + LLM on full retrieved context)
+
+**Session grouping** — `chat` traces carry a `session_id`. In the Traces view, filter by session to see all turns of a conversation in order.
+
+**Model costs / Token counts** — show `$0.00` and `0 tokens` because Ollama runs locally and does not report token counts through LangChain. This is expected for any self-hosted local model setup — cost tracking applies when using cloud providers (OpenAI, Anthropic, etc.).
+
+**Scores** — not wired up; this is a LangFuse feature for collecting human feedback (thumbs up/down) on individual traces, out of scope for this challenge.
 
 ---
 

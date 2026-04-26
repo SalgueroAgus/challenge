@@ -6,6 +6,7 @@ from app.adapters.ollama_adapter import ollama_adapter
 from app.adapters.qdrant_adapter import qdrant_adapter
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.core.observability import start_trace
 from app.services.embedding_service import embedding_service
 
 logger = get_logger(__name__)
@@ -64,9 +65,14 @@ class RAGService:
 
         # 4 — call LLM (no session — RAG queries are stateless)
         client = ollama_adapter.get_client()
+        tracer = start_trace("rag-query", model=settings.ollama_model, input_messages=messages)
+
         start = time.perf_counter()
         response = await client.ainvoke(messages)
         latency_ms = int((time.perf_counter() - start) * 1000)
+
+        if tracer:
+            tracer.finish(output=response.content, latency_ms=latency_ms)
 
         logger.info("RAGService.query hits=%d latency_ms=%d", len(hits), latency_ms)
 

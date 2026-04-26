@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     # CORS — space-separated list of allowed frontend origins
     cors_origins: str = "http://localhost:5173 http://localhost:5174 http://localhost"
 
+    # LangFuse observability (optional — tracing disabled if keys are empty)
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    langfuse_host: str = "http://localhost:3000"
+
     # Auth
     jwt_secret_key: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"
