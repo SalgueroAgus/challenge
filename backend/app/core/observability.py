@@ -70,10 +70,8 @@ def start_trace(
         return None
     try:
         # Use the last human message as the trace-level input so it's visible at a glance
-        last_human = next(
-            (m["content"] for m in reversed(_messages_to_dicts(input_messages)) if m["role"] == "user"),
-            None,
-        )
+        dicts = _messages_to_dicts(input_messages)
+        last_human = next((m["content"] for m in reversed(dicts) if m["role"] == "user"), None)
         trace = lf.trace(name=name, session_id=session_id, input=last_human)
         generation = trace.generation(
             name="llm-call",
