@@ -1,6 +1,7 @@
 import time
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from qdrant_client.models import ScoredPoint
 
 from app.adapters.llm_adapter import active_model, get_llm
 from app.adapters.qdrant_adapter import qdrant_adapter
@@ -21,7 +22,7 @@ _RAG_SYSTEM_PROMPT = (
 )
 
 
-def _build_context(hits: list) -> str:
+def _build_context(hits: list[ScoredPoint]) -> str:
     parts = []
     for hit in hits:
         p = hit.payload or {}
@@ -31,54 +32,26 @@ def _build_context(hits: list) -> str:
 
 
 class RAGService:
-    async def query(
+    async def retrieve(
         self,
         query: str,
         top_k: int | None = None,
         source_filter: str | None = None,
-    ) -> dict:
+    ) -> list[ScoredPoint]:
         resolved_top_k = top_k or settings.rag_top_k
-
-        # 1 — embed query (dense + sparse for hybrid search)
         query_vector = embedding_service.embed_one(query)
         sparse_vector = sparse_embedding_service.embed_one(query)
-
-        # 2 — retrieve from Qdrant using RRF hybrid search
-        hits = qdrant_adapter.hybrid_search(
+        return qdrant_adapter.hybrid_search(
             dense_vector=query_vector,
             sparse_vector=sparse_vector,
             top_k=resolved_top_k,
             source_filter=source_filter,
         )
 
-        if not hits:
-            return {
-                "answer": "No relevant documents found for your query.",
-                "sources": [],
-                "meta": {"latency_ms": 0, "hits": 0},
-            }
+    def build_context(self, hits: list[ScoredPoint]) -> str:
+        return _build_context(hits)
 
-        # 3 — build grounded prompt
-        context = _build_context(hits)
-        messages = [
-            SystemMessage(content=_RAG_SYSTEM_PROMPT),
-            HumanMessage(content=f"Context:\n{context}\n\nQuestion: {query}"),
-        ]
-
-        # 4 — call LLM (no session — RAG queries are stateless)
-        client = get_llm()
-        tracer = start_trace("rag-query", model=active_model(), input_messages=messages)
-
-        start = time.perf_counter()
-        response = await client.ainvoke(messages)
-        latency_ms = int((time.perf_counter() - start) * 1000)
-
-        if tracer:
-            tracer.finish(output=response.content, latency_ms=latency_ms)
-
-        logger.info("RAGService.query hits=%d latency_ms=%d", len(hits), latency_ms)
-
-        # 5 — build sources with image URLs
+    def hits_to_sources(self, hits: list[ScoredPoint]) -> list[dict]:
         sources = []
         for hit in hits:
             p = hit.payload or {}
@@ -93,10 +66,45 @@ class RAGService:
                     "image_urls": [f"/images/{fn}" for fn in image_filenames],
                 }
             )
+        return sources
+
+    async def query(
+        self,
+        query: str,
+        top_k: int | None = None,
+        source_filter: str | None = None,
+    ) -> dict:
+        start = time.perf_counter()
+
+        hits = await self.retrieve(query, top_k, source_filter)
+
+        if not hits:
+            return {
+                "answer": "No relevant documents found for your query.",
+                "sources": [],
+                "meta": {"latency_ms": 0, "hits": 0},
+            }
+
+        context = self.build_context(hits)
+        messages = [
+            SystemMessage(content=_RAG_SYSTEM_PROMPT),
+            HumanMessage(content=f"Context:\n{context}\n\nQuestion: {query}"),
+        ]
+
+        client = get_llm()
+        tracer = start_trace("rag-query", model=active_model(), input_messages=messages)
+
+        response = await client.ainvoke(messages)
+        latency_ms = int((time.perf_counter() - start) * 1000)
+
+        if tracer:
+            tracer.finish(output=response.content, latency_ms=latency_ms)
+
+        logger.info("RAGService.query hits=%d latency_ms=%d", len(hits), latency_ms)
 
         return {
             "answer": response.content,
-            "sources": sources,
+            "sources": self.hits_to_sources(hits),
             "meta": {"latency_ms": latency_ms, "hits": len(hits)},
         }
 

@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { sendChat, sendRagQuery } from '../api/client'
+import { sendAgentQuery, sendChat, sendRagQuery } from '../api/client'
 import type { Message } from '../types'
 import { LoadingBubble } from './LoadingBubble'
 import { MessageBubble } from './MessageBubble'
 
 interface Props {
-  mode: 'chat' | 'rag'
+  mode: 'chat' | 'rag' | 'agent'
   sessionId: string
 }
 
@@ -18,11 +18,16 @@ const EMPTY_STATE = {
     heading: 'Ask about Argentine Birds',
     sub: 'Questions are answered from the Listado de las Aves Argentinas documents.',
   },
+  agent: {
+    heading: 'Agent Q&A',
+    sub: 'The agent decides whether to search the documents or answer directly.',
+  },
 }
 
 const PLACEHOLDER = {
   chat: 'Message the AI…',
   rag: 'Ask a question about Argentine birds…',
+  agent: 'Ask anything — the agent will decide how to answer…',
 }
 
 export function ConversationPane({ mode, sessionId }: Props) {
@@ -33,13 +38,10 @@ export function ConversationPane({ mode, sessionId }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  // Scroll to bottom when new messages arrive
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, isLoading])
 
-  // Auto-resize textarea up to ~5 lines.
-  // Guard against scrollHeight === 0 (element hidden via display:none on mount).
   useEffect(() => {
     const ta = textareaRef.current
     if (!ta || ta.scrollHeight === 0) return
@@ -66,7 +68,7 @@ export function ConversationPane({ mode, sessionId }: Props) {
           ...prev,
           { id: crypto.randomUUID(), role: 'assistant', content: res.reply },
         ])
-      } else {
+      } else if (mode === 'rag') {
         const res = await sendRagQuery(text)
         setMessages(prev => [
           ...prev,
@@ -75,6 +77,19 @@ export function ConversationPane({ mode, sessionId }: Props) {
             role: 'assistant',
             content: res.answer,
             sources: res.sources,
+          },
+        ])
+      } else {
+        const res = await sendAgentQuery(text)
+        setMessages(prev => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            role: 'assistant',
+            content: res.answer,
+            sources: res.sources,
+            route: res.route,
+            retries: res.meta.retries,
           },
         ])
       }
@@ -96,7 +111,6 @@ export function ConversationPane({ mode, sessionId }: Props) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Message list */}
       <div className="flex-1 overflow-y-auto px-4 sm:px-8 md:px-16 lg:px-32">
         {isEmpty ? (
           <div className="flex flex-col items-center justify-center py-32 gap-2 text-center">
@@ -121,7 +135,6 @@ export function ConversationPane({ mode, sessionId }: Props) {
         )}
       </div>
 
-      {/* Input bar */}
       <div className="border-t border-gray-100 bg-white px-4 sm:px-8 md:px-16 lg:px-32 py-4">
         <div className="flex items-end gap-2 bg-white border border-gray-200 rounded-2xl px-4 py-3 shadow-sm focus-within:border-gray-400 transition-colors">
           <textarea

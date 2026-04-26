@@ -24,6 +24,8 @@ dependencies = [
     "pymupdf>=1.27.0",
     # HTTP client
     "httpx>=0.28.0",
+    # Agent orchestration
+    "langgraph>=0.2.0",
     # Observability
     "langfuse>=2.0.0,<3.0.0",
     # Auth
