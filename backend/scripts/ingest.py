@@ -126,7 +126,9 @@ def _build_page_index(pdf_paths: list[Path]) -> tuple[str, list[int], list[tuple
     return full_text, page_starts, page_meta
 
 
-def _page_for_offset(offset: int, page_starts: list[int], page_meta: list[tuple]) -> tuple[str, int]:
+def _page_for_offset(
+    offset: int, page_starts: list[int], page_meta: list[tuple]
+) -> tuple[str, int]:
     idx = max(0, bisect.bisect_right(page_starts, offset) - 1)
     source, page, _ = page_meta[idx]
     return source, page

@@ -15,7 +15,8 @@ _CLASSIFY_SYSTEM = (
     "You are a query router for an Argentine birds knowledge base.\n"
     "Respond with EXACTLY TWO lines:\n"
     "Line 1: 'rag' or 'direct'\n"
-    "  rag = question needs facts from scientific bird documents (species, taxonomy, distribution, conservation)\n"
+    "  rag = question needs facts from scientific bird documents"
+    " (species, taxonomy, distribution, conservation)\n"
     "  direct = greeting, general chat, or topic unrelated to Argentine birds\n"
     "Line 2: the key search terms — strip ALL conversational filler\n"
     "  Remove phrases like: 'que me podes decir', 'contame sobre', 'sabes algo del',\n"
@@ -59,7 +60,8 @@ _RAG_SYSTEM = (
     "You are a knowledgeable ornithology assistant specialising in Argentine birds.\n"
     "Answer the user's question using only the context provided below.\n"
     "Cite the source document and page number when relevant.\n"
-    "If the context contains partial information, share what is available and note what is missing.\n"
+    "If the context contains partial information, share what is available"
+    " and note what is missing.\n"
     "Only say 'I don't have enough information in the provided documents' if the context "
     "contains absolutely nothing related to the question.\n"
     "Do not use prior knowledge beyond what is in the context."
@@ -101,7 +103,7 @@ async def _llm_call(system: str, user: str) -> str:
 @observe()
 async def classify_node(state: AgentState) -> dict:
     raw = await _llm_call(_CLASSIFY_SYSTEM, state["query"])
-    lines = [l.strip() for l in raw.strip().splitlines() if l.strip()]
+    lines = [ln.strip() for ln in raw.strip().splitlines() if ln.strip()]
     route = "rag" if lines and "rag" in lines[0].lower() else "direct"
     # Use the extracted search terms when available; fall back to original query
     if route == "rag" and len(lines) > 1 and lines[1].lower() not in ("rag", "direct", ""):
@@ -123,7 +125,8 @@ async def retrieve_node(state: AgentState) -> dict:
     langfuse_context.update_current_observation(
         input=state["current_query"],
         output=[
-            {"source": h.payload.get("source"), "page": h.payload.get("page"), "score": round(h.score, 4)}
+            {"source": h.payload.get("source"), "page": h.payload.get("page"),
+             "score": round(h.score, 4)}
             for h in hits
         ],
         metadata={"hits": len(hits)},

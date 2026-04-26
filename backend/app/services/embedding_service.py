@@ -19,7 +19,6 @@ class EmbeddingService:
         return self.embed_batch([text])[0]
 
     def query_embed_one(self, text: str) -> list[float]:
-        """Embed a search query — uses query_embed() for models that distinguish query vs passage."""
         results = list(self._model.query_embed([text]))
         return results[0].tolist()
 
