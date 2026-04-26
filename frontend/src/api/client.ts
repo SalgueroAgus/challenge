@@ -53,6 +53,13 @@ export interface RagResult {
   meta: { latency_ms: number; hits: number }
 }
 
+export interface AgentResult {
+  answer: string
+  sources: RAGSource[]
+  route: 'rag' | 'direct'
+  meta: { latency_ms: number; retries: number }
+}
+
 export async function sendChat(message: string, sessionId: string): Promise<ChatResult> {
   const res = await fetch(`${API_BASE}/api/v1/chat`, {
     method: 'POST',
@@ -65,6 +72,16 @@ export async function sendChat(message: string, sessionId: string): Promise<Chat
 
 export async function sendRagQuery(query: string): Promise<RagResult> {
   const res = await fetch(`${API_BASE}/api/v1/rag-query`, {
+    method: 'POST',
+    headers: await authHeaders(),
+    body: JSON.stringify({ query }),
+  })
+  if (!res.ok) throw new Error(`Server error ${res.status}`)
+  return res.json()
+}
+
+export async function sendAgentQuery(query: string): Promise<AgentResult> {
+  const res = await fetch(`${API_BASE}/api/v1/agent`, {
     method: 'POST',
     headers: await authHeaders(),
     body: JSON.stringify({ query }),

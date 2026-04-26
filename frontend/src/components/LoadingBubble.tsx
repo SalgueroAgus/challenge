@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-const MESSAGES: Record<'chat' | 'rag', string[]> = {
+const MESSAGES: Record<'chat' | 'rag' | 'agent', string[]> = {
   chat: [
     'Thinking...',
     'Generating response...',
@@ -14,9 +14,16 @@ const MESSAGES: Record<'chat' | 'rag', string[]> = {
     'Consulting the documents...',
     'Almost there...',
   ],
+  agent: [
+    'Classifying your question...',
+    'Searching the archives...',
+    'Grading the results...',
+    'Generating answer...',
+    'Almost there...',
+  ],
 }
 
-export function LoadingBubble({ mode }: { mode: 'chat' | 'rag' }) {
+export function LoadingBubble({ mode }: { mode: 'chat' | 'rag' | 'agent' }) {
   const messages = MESSAGES[mode]
   const [index, setIndex] = useState(0)
 
