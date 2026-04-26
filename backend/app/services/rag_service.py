@@ -1,13 +1,13 @@
 import time
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from langfuse.decorators import langfuse_context, observe
 from qdrant_client.models import ScoredPoint
 
 from app.adapters.llm_adapter import active_model, get_llm
 from app.adapters.qdrant_adapter import qdrant_adapter
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.core.observability import start_trace
 from app.services.embedding_service import embedding_service, sparse_embedding_service
 
 logger = get_logger(__name__)
@@ -20,6 +20,18 @@ _RAG_SYSTEM_PROMPT = (
     '"I don\'t have enough information in the provided documents to answer this question."\n'
     "Do not use prior knowledge beyond what is in the context."
 )
+
+
+@observe(as_type="generation")
+async def _llm_call(system: str, user: str) -> str:
+    langfuse_context.update_current_observation(
+        model=active_model(),
+        input=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+    )
+    response = await get_llm().ainvoke([SystemMessage(content=system), HumanMessage(content=user)])
+    text = response.content
+    langfuse_context.update_current_observation(output=text)
+    return text
 
 
 def _build_context(hits: list[ScoredPoint]) -> str:
@@ -68,6 +80,7 @@ class RAGService:
             )
         return sources
 
+    @observe(name="rag-query")
     async def query(
         self,
         query: str,
@@ -86,24 +99,13 @@ class RAGService:
             }
 
         context = self.build_context(hits)
-        messages = [
-            SystemMessage(content=_RAG_SYSTEM_PROMPT),
-            HumanMessage(content=f"Context:\n{context}\n\nQuestion: {query}"),
-        ]
-
-        client = get_llm()
-        tracer = start_trace("rag-query", model=active_model(), input_messages=messages)
-
-        response = await client.ainvoke(messages)
+        answer = await _llm_call(_RAG_SYSTEM_PROMPT, f"Context:\n{context}\n\nQuestion: {query}")
         latency_ms = int((time.perf_counter() - start) * 1000)
-
-        if tracer:
-            tracer.finish(output=response.content, latency_ms=latency_ms)
 
         logger.info("RAGService.query hits=%d latency_ms=%d", len(hits), latency_ms)
 
         return {
-            "answer": response.content,
+            "answer": answer,
             "sources": self.hits_to_sources(hits),
             "meta": {"latency_ms": latency_ms, "hits": len(hits)},
         }
