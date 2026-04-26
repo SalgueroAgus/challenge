@@ -1,4 +1,3 @@
-from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
 
 import bcrypt
@@ -24,7 +23,7 @@ def create_access_token(subject: str) -> str:
     )
 
 
-def get_current_user(token: str = Depends(oauth2_scheme)) -> Generator[str, None, None]:
+def get_current_user(token: str = Depends(oauth2_scheme)) -> str:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid or expired token",

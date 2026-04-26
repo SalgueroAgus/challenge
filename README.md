@@ -46,16 +46,19 @@ graph TD
     subgraph Frontend["Frontend — React + Vite :5173"]
         UI_Chat["Chat Tab"]
         UI_RAG["RAG Q&A Tab"]
+        UI_Agent["Agent Tab"]
     end
 
     subgraph Backend["Backend — FastAPI :8000"]
         HC["GET /api/v1/healthcheck"]
         Chat["POST /api/v1/chat"]
         RAG["POST /api/v1/rag-query"]
+        Agent["POST /api/v1/agent"]
 
         subgraph Services
             LLMService["LLM Service"]
             RAGService["RAG Service"]
+            AgentService["Agent Service\n(LangGraph)"]
             EmbedService["Embedding Service"]
         end
 
@@ -76,13 +79,16 @@ graph TD
         Embedder["FastEmbed\nBAAI/bge-small-en-v1.5"]
     end
 
-    User --> UI_Chat & UI_RAG
+    User --> UI_Chat & UI_RAG & UI_Agent
     UI_Chat -- "POST /api/v1/chat" --> Chat
     UI_RAG -- "POST /api/v1/rag-query" --> RAG
+    UI_Agent -- "POST /api/v1/agent" --> Agent
 
     Chat --> LLMService --> OllamaAdapter --> Ollama
     RAG --> RAGService --> EmbedService --> QdrantAdapter --> Qdrant
     RAGService --> LLMService
+    Agent --> AgentService --> RAGService
+    AgentService --> LLMService
 
     PDFs --> Chunker --> Embedder --> Qdrant
 ```
@@ -116,21 +122,32 @@ Challenge/
 │   │   │       ├── router.py
 │   │   │       └── routes/
 │   │   │           ├── health.py   # GET /api/v1/healthcheck
+│   │   │           ├── auth.py     # POST /api/v1/auth/token
 │   │   │           ├── chat.py     # POST /api/v1/chat
-│   │   │           └── rag.py      # POST /api/v1/rag-query
+│   │   │           ├── rag.py      # POST /api/v1/rag-query
+│   │   │           └── agent.py    # POST /api/v1/agent
 │   │   ├── services/
 │   │   │   ├── llm_service.py      # LLM call + session memory
-│   │   │   ├── rag_service.py      # Retrieve → prompt → answer
+│   │   │   ├── rag_service.py      # Hybrid retrieve → prompt → answer
+│   │   │   ├── agent_service.py    # LangGraph agent (classify → retrieve → grade → generate)
 │   │   │   └── embedding_service.py
-│   │   └── adapters/
-│   │       ├── ollama_adapter.py   # langchain-ollama wrapper
-│   │       └── qdrant_adapter.py   # qdrant-client wrapper
+│   │   ├── adapters/
+│   │   │   ├── ollama_adapter.py   # langchain-ollama wrapper
+│   │   │   └── qdrant_adapter.py   # qdrant-client wrapper (hybrid search via RRF)
+│   │   └── core/
+│   │       ├── config.py           # Pydantic Settings (env-driven)
+│   │       ├── security.py         # JWT auth
+│   │       ├── observability.py    # LangFuse tracing helpers
+│   │       └── logging.py          # Structured JSON logging
 │   ├── scripts/
 │   │   └── ingest.py               # Load PDFs → chunk → embed → store
 │   ├── tests/
 │   │   ├── test_health.py
+│   │   ├── test_auth.py
 │   │   ├── test_chat.py
-│   │   └── test_rag.py
+│   │   ├── test_rag.py
+│   │   ├── test_agent.py
+│   │   └── test_hybrid_search.py
 │   ├── Dockerfile
 │   ├── pyproject.toml              # Dependencies managed with uv
 │   └── .env.example
@@ -475,6 +492,56 @@ Ask a question grounded in your ingested documents.
 
 ---
 
+### `POST /api/v1/agent`
+
+Agentic Q&A powered by a **LangGraph graph**. The agent classifies each question, decides whether to search the document corpus or answer directly, grades the retrieval quality, and rewrites the query once if results are poor — guaranteeing a grounded answer when possible, a direct answer otherwise.
+
+> Requires a Bearer token — see [Authentication](#authentication) for how to obtain one.
+
+**Graph flow:**
+
+```
+classify → "rag"    → retrieve → grade → "good" → generate_rag   → answer
+         → "direct" → generate_direct → answer
+                               → "poor" + retries < 1 → rewrite → retrieve → grade
+                               → "poor" + retries ≥ 1 → generate_direct → answer
+```
+
+**Request body:**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `query` | string | ✓ | User question |
+
+**Response:**
+
+```json
+{
+  "answer": "The Rufous Hornero (Furnarius rufus) was declared Argentina's national bird in 1928...",
+  "sources": [
+    {
+      "chunk_id": "abc-123",
+      "source": "LISTADO DE LAS AVES ARGENTINAS-1.pdf",
+      "page": 4,
+      "score": 0.92,
+      "text_snippet": "El Hornero fue declarado ave nacional...",
+      "image_urls": ["/images/LISTADO_DE_LAS_AVES_ARGENTINAS-1_p4_1.jpeg"]
+    }
+  ],
+  "route": "rag",
+  "meta": {
+    "latency_ms": 4200,
+    "retries": 0
+  }
+}
+```
+
+`route` is `"rag"` or `"direct"` — reflects which generation path actually ran, not just the initial classification. `retries` is `1` if the query was rewritten after a poor retrieval grade. `sources` is empty when `route` is `"direct"`.
+
+Every agent run is traced end-to-end in LangFuse as a single `agent-run` trace with child spans per node and generations per LLM call — see [Observability](#observability--langfuse).
+
+---
+
 ## RAG Pipeline
 
 ### Document Ingestion
@@ -505,10 +572,13 @@ Metadata stored per chunk:
 
 ### Retrieval
 
-At query time:
-1. The query is embedded with the same FastEmbed model
-2. Qdrant performs a cosine similarity search and returns `top_k` chunks
-3. The retrieved chunks are injected into the LLM prompt as context
+At query time the pipeline uses **hybrid search with Reciprocal Rank Fusion (RRF)**:
+
+1. The query is embedded with FastEmbed (dense vector, 384 dims)
+2. A sparse BM25 vector is computed with FastEmbed's sparse model
+3. Qdrant runs both searches in parallel via `Prefetch` and fuses the ranked lists with RRF
+4. The top-k chunks by fused score are returned — dense captures semantic similarity, sparse captures keyword overlap
+5. The retrieved chunks are injected into the LLM prompt as context
 
 ---
 
@@ -621,12 +691,8 @@ The active provider and model are always visible in the healthcheck response:
 ## Testing
 
 ```bash
-# Run all tests
 make test
 # or: cd backend && uv run pytest -v
-
-# Run with coverage (coming)
-cd backend && uv run pytest --cov=app -v
 ```
 
 Current test coverage:
@@ -634,10 +700,13 @@ Current test coverage:
 | Test | Status |
 |---|---|
 | `test_health.py` — healthcheck returns 200 + `status: ok` | ✓ |
+| `test_auth.py` — valid login, wrong credentials, expired token rejection | ✓ |
 | `test_chat.py` — reply shape, empty-message rejection (422), session auto-generation | ✓ |
 | `test_rag.py` — answer + sources shape, empty-query rejection (422), `top_k` out-of-range (422), source filter passthrough | ✓ |
+| `test_agent.py` — RAG route shape, direct route (empty sources), retries in meta, empty-query rejection (422), auth enforcement | ✓ |
+| `test_hybrid_search.py` — sparse vector shape, RRF prefetch wiring, source filter passthrough | ✓ |
 
-Chat and RAG tests mock the service layer so they run without a live Ollama or Qdrant instance.
+All tests mock the service layer and run without a live Ollama or Qdrant instance.
 
 ---
 
@@ -685,21 +754,25 @@ make dev
 |---|---|---|
 | `chat` | `POST /api/v1/chat` | Session ID, full message history sent to the model, model reply, wall-clock latency |
 | `rag-query` | `POST /api/v1/rag-query` | System prompt + all retrieved chunks injected as context, model answer, wall-clock latency |
+| `agent-run` | `POST /api/v1/agent` | Full graph execution: one child span per node (`classify`, `retrieve`, `grade`, `rewrite`, `generate_rag`/`generate_direct`), one LLM generation per LLM call with model name, input messages, and output |
 
 ### Exploring the dashboard
 
 Open **http://localhost:3000 → Tracing → Traces** after making a few requests.
 
-**Traces list** — one row per API call, named `chat` or `rag-query`. Click any row to drill in.
+**Traces list** — one row per API call. Click any row to drill in.
 
-**Inside a trace** — you'll see the `llm-call` generation with:
+**Inside a `chat` or `rag-query` trace** — you'll see the `llm-call` generation with:
 - **Input**: the exact messages array sent to the model (system prompt, conversation history or RAG context, user query)
 - **Output**: the raw model reply
 - **Latency**: wall-clock time for the LLM call
 
+**Inside an `agent-run` trace** — you'll see the full graph as a nested hierarchy: each LangGraph node is a span, each LLM call within that node is a generation. This makes it easy to see exactly where time was spent, which route was taken, and what each LLM call received and returned.
+
 **Latency breakdown (from real runs):**
 - `chat` — p50 ~1–2 s, p90 ~7 s (grows with conversation length as history accumulates)
 - `rag-query` — p50 ~30–35 s (embedding + Qdrant retrieval + LLM on full retrieved context)
+- `agent-run` — p50 ~35–50 s (2–3 LLM calls in the common path; up to 5 in the rewrite path)
 
 **Session grouping** — `chat` traces carry a `session_id`. In the Traces view, filter by session to see all turns of a conversation in order.
 
