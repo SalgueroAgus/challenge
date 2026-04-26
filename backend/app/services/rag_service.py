@@ -7,7 +7,7 @@ from app.adapters.qdrant_adapter import qdrant_adapter
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.observability import start_trace
-from app.services.embedding_service import embedding_service
+from app.services.embedding_service import embedding_service, sparse_embedding_service
 
 logger = get_logger(__name__)
 
@@ -39,12 +39,14 @@ class RAGService:
     ) -> dict:
         resolved_top_k = top_k or settings.rag_top_k
 
-        # 1 — embed query
+        # 1 — embed query (dense + sparse for hybrid search)
         query_vector = embedding_service.embed_one(query)
+        sparse_vector = sparse_embedding_service.embed_one(query)
 
-        # 2 — retrieve from Qdrant
-        hits = qdrant_adapter.search(
-            query_vector=query_vector,
+        # 2 — retrieve from Qdrant using RRF hybrid search
+        hits = qdrant_adapter.hybrid_search(
+            dense_vector=query_vector,
+            sparse_vector=sparse_vector,
             top_k=resolved_top_k,
             source_filter=source_filter,
         )

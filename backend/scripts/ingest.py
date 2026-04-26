@@ -18,11 +18,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import fitz  # PyMuPDF
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, PointStruct, VectorParams
+from qdrant_client.models import Distance, PointStruct, SparseVectorParams, VectorParams
 
 from app.core.config import settings
 from app.core.logging import get_logger, setup_logging
-from app.services.embedding_service import EmbeddingService
+from app.services.embedding_service import EmbeddingService, SparseEmbeddingService
 
 setup_logging()
 logger = get_logger("ingest")
@@ -113,16 +113,22 @@ def recreate_collection(client: QdrantClient) -> None:
 
     client.create_collection(
         collection_name=name,
-        vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
+        vectors_config={"dense": VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE)},
+        sparse_vectors_config={"sparse": SparseVectorParams()},
     )
-    logger.info("Created collection '%s' (dim=%d, cosine)", name, VECTOR_SIZE)
+    logger.info("Created collection '%s' (dim=%d, cosine + BM25 sparse)", name, VECTOR_SIZE)
 
 
-def upsert_batch(client: QdrantClient, chunks: list[dict], vectors: list[list[float]]) -> None:
+def upsert_batch(
+    client: QdrantClient,
+    chunks: list[dict],
+    dense_vectors: list[list[float]],
+    sparse_vectors: list,
+) -> None:
     points = [
         PointStruct(
             id=chunk["chunk_id"],
-            vector=vector,
+            vector={"dense": dense, "sparse": sparse},
             payload={
                 "text": chunk["text"],
                 "source": chunk["source"],
@@ -131,7 +137,7 @@ def upsert_batch(client: QdrantClient, chunks: list[dict], vectors: list[list[fl
                 "image_filenames": chunk["image_filenames"],
             },
         )
-        for chunk, vector in zip(chunks, vectors)
+        for chunk, dense, sparse in zip(chunks, dense_vectors, sparse_vectors)
     ]
     client.upsert(collection_name=settings.qdrant_collection_name, points=points)
 
@@ -149,6 +155,7 @@ def main() -> None:
         chunk_overlap=settings.rag_chunk_overlap,
     )
     embed_svc = EmbeddingService()
+    sparse_embed_svc = SparseEmbeddingService()
     client = QdrantClient(url=settings.qdrant_url)
 
     recreate_collection(client)
@@ -159,12 +166,13 @@ def main() -> None:
 
     logger.info("Total chunks to embed: %d", len(all_chunks))
 
-    # Embed and upsert in batches
+    # Embed and upsert in batches (dense + sparse)
     for i in range(0, len(all_chunks), BATCH_SIZE):
         batch = all_chunks[i : i + BATCH_SIZE]
         texts = [c["text"] for c in batch]
-        vectors = embed_svc.embed_batch(texts)
-        upsert_batch(client, batch, vectors)
+        dense_vectors = embed_svc.embed_batch(texts)
+        sparse_vectors = sparse_embed_svc.embed_batch(texts)
+        upsert_batch(client, batch, dense_vectors, sparse_vectors)
         upserted = min(i + BATCH_SIZE, len(all_chunks))
         logger.info("Upserted batch %d/%d", upserted, len(all_chunks))
 
