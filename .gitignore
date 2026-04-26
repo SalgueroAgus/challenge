@@ -46,3 +46,6 @@ htmlcov/
 # Frontend
 frontend/node_modules/
 frontend/dist/
+
+# QA
+qa-audit/

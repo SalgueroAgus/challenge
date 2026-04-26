@@ -6,6 +6,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from app.adapters.ollama_adapter import ollama_adapter
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.core.observability import start_trace
 
 logger = get_logger(__name__)
 
@@ -54,9 +55,14 @@ class LLMService:
 
         logger.info("LLMService.chat session=%s model=%s", sid, resolved_model)
 
+        tracer = start_trace("chat", model=resolved_model, input_messages=history, session_id=sid)
+
         start = time.perf_counter()
         response = await client.ainvoke(history)
         latency_ms = int((time.perf_counter() - start) * 1000)
+
+        if tracer:
+            tracer.finish(output=response.content, latency_ms=latency_ms)
 
         history.append(AIMessage(content=response.content))
         _trim_session(history)
