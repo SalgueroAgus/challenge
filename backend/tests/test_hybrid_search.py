@@ -2,8 +2,7 @@
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-from qdrant_client.models import Fusion, FusionQuery, Prefetch, SparseVector
+from qdrant_client.models import Fusion, FusionQuery, SparseVector
 
 from app.adapters.qdrant_adapter import QdrantAdapter
 from app.services.embedding_service import SparseEmbeddingService
