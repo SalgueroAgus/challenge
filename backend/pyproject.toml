@@ -11,8 +11,9 @@ dependencies = [
     "pydantic>=2.11.0",
     "pydantic-settings>=2.9.0",
     "python-dotenv>=1.1.0",
-    # LLM — Ollama via LangChain
+    # LLM — Ollama (local) and Groq (cloud free tier)
     "langchain-ollama>=1.1.0",
+    "langchain-groq>=0.2.0",
     # Text splitting
     "langchain-text-splitters>=1.1.2",
     # Vector DB

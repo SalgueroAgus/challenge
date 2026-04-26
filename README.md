@@ -573,12 +573,42 @@ All configuration is driven by environment variables. Copy `.env.example` to `.e
 cp backend/.env.example backend/.env
 ```
 
+### Switching LLM Providers
+
+Set `LLM_PROVIDER` to choose between local Ollama and Groq cloud. Only the variables for your chosen provider need to be filled in.
+
+**Local (default) — Ollama:**
+```env
+LLM_PROVIDER=ollama
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=qwen3.5:4b
+```
+
+**Cloud (free) — Groq:**
+```env
+LLM_PROVIDER=groq
+GROQ_API_KEY=gsk_...        # from console.groq.com → API Keys
+GROQ_MODEL=llama-3.3-70b-versatile
+```
+
+Get a free Groq key at **https://console.groq.com** — sign up, go to API Keys, create one. No credit card required. The `llama-3.3-70b-versatile` model is ~10× faster than a local 4B model on consumer hardware.
+
+The active provider and model are always visible in the healthcheck response:
+```json
+{ "status": "ok", "llm_provider": "groq", "model": "llama-3.3-70b-versatile" }
+```
+
+### All Variables
+
 | Variable | Default | Description |
 |---|---|---|
 | `APP_ENV` | `development` | `development` or `production` |
 | `APP_VERSION` | `0.1.0` | Reported in healthcheck |
+| `LLM_PROVIDER` | `ollama` | `ollama` or `groq` |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL |
 | `OLLAMA_MODEL` | `qwen3.5:4b` | Model name as listed by `ollama list` |
+| `GROQ_API_KEY` | — | Groq API key (required when `LLM_PROVIDER=groq`) |
+| `GROQ_MODEL` | `llama-3.3-70b-versatile` | Groq model name |
 | `QDRANT_URL` | `http://localhost:6333` | Qdrant REST API URL |
 | `QDRANT_COLLECTION_NAME` | `documents` | Collection to store/query embeddings |
 | `EMBED_MODEL` | `BAAI/bge-small-en-v1.5` | FastEmbed model (downloaded on first run) |
