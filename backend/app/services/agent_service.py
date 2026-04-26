@@ -52,12 +52,12 @@ _RAG_SYSTEM = (
 
 
 class AgentState(TypedDict):
-    query: str          # original user query — never mutated
+    query: str  # original user query — never mutated
     current_query: str  # may be rewritten once by rewrite_node
-    route: str          # "rag" | "direct" — set by generate nodes (reflects what ran)
-    hits: list          # Qdrant ScoredPoint results
-    grade: str          # "good" | "poor"
-    retries: int        # incremented by rewrite_node; caps the cycle at 1 retry
+    route: str  # "rag" | "direct" — set by generate nodes (reflects what ran)
+    hits: list  # Qdrant ScoredPoint results
+    grade: str  # "good" | "poor"
+    retries: int  # incremented by rewrite_node; caps the cycle at 1 retry
     answer: str
     sources: list
 
@@ -72,10 +72,12 @@ async def _llm_call(system: str, user: str) -> str:
             {"role": "user", "content": user},
         ],
     )
-    response = await get_llm().ainvoke([
-        SystemMessage(content=system),
-        HumanMessage(content=user),
-    ])
+    response = await get_llm().ainvoke(
+        [
+            SystemMessage(content=system),
+            HumanMessage(content=user),
+        ]
+    )
     text = response.content.strip()
     langfuse_context.update_current_observation(output=text)
     return text
@@ -178,16 +180,24 @@ def _build_graph():
     g.add_node("generate_direct", generate_direct_node)
 
     g.add_edge(START, "classify")
-    g.add_conditional_edges("classify", _route_after_classify, {
-        "rag": "retrieve",
-        "direct": "generate_direct",
-    })
+    g.add_conditional_edges(
+        "classify",
+        _route_after_classify,
+        {
+            "rag": "retrieve",
+            "direct": "generate_direct",
+        },
+    )
     g.add_edge("retrieve", "grade")
-    g.add_conditional_edges("grade", _route_after_grade, {
-        "generate_rag": "generate_rag",
-        "generate_direct": "generate_direct",
-        "rewrite": "rewrite",
-    })
+    g.add_conditional_edges(
+        "grade",
+        _route_after_grade,
+        {
+            "generate_rag": "generate_rag",
+            "generate_direct": "generate_direct",
+            "rewrite": "rewrite",
+        },
+    )
     g.add_edge("rewrite", "retrieve")
     g.add_edge("generate_rag", END)
     g.add_edge("generate_direct", END)
