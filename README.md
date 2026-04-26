@@ -78,8 +78,8 @@ graph TD
 
     subgraph Ingest["Offline — Ingest Script"]
         PDFs["PDF Documents\n/data/"]
-        Chunker["Text Splitter\n(RecursiveCharacter)"]
-        Embedder["FastEmbed\nBAAI/bge-small-en-v1.5\n+ BM25 sparse"]
+        Chunker["Structure-Aware Parser\n(species-header split)"]
+        Embedder["FastEmbed\nparaphrase-multilingual-MiniLM-L12-v2\n+ BM25 sparse"]
     end
 
     User --> UI_Chat & UI_RAG & UI_Agent
@@ -122,7 +122,7 @@ classify → "rag"    → retrieve → grade → "good"              → generat
 | LLM model | qwen3.5:4b | Strong instruction-following at 4B params, fast on CPU/Apple Silicon |
 | LLM cloud alt | Groq (free tier) | `llama-3.3-70b-versatile` — ~10× faster than local 4B, no credit card |
 | LLM integration | langchain-ollama / langchain-groq | Thin, well-maintained wrappers; swappable via `LLM_PROVIDER` env var |
-| Embeddings | FastEmbed `BAAI/bge-small-en-v1.5` | ~25 MB model, auto-downloaded, strong retrieval quality |
+| Embeddings | FastEmbed `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` | ~120 MB model, auto-downloaded, multilingual (Spanish + English), 384 dims |
 | Sparse embeddings | FastEmbed `Qdrant/bm25` | BM25 keyword matching for hybrid search |
 | Vector DB | Qdrant (local) | Hybrid search, metadata filtering, first-class FastEmbed support |
 | Text splitting | langchain-text-splitters | Recursive character splitter with configurable overlap |
@@ -364,13 +364,27 @@ Place PDFs in `data/`, then run:
 make ingest
 ```
 
-The script (`backend/scripts/ingest.py`):
-1. Loads each PDF with **PyMuPDF** — extracts text and embedded images (images < 80×80 px skipped as decorative noise)
-2. Splits text into chunks (`chunk_size=1200`, `overlap=200`) using `RecursiveCharacterTextSplitter`
-3. Embeds each chunk with FastEmbed — dense (`BAAI/bge-small-en-v1.5`, 384 dims) and sparse (BM25)
-4. Stores vectors + metadata in Qdrant collection `documents`
+The script (`backend/scripts/ingest.py`) uses a **structure-aware, species-first pipeline** rather than a generic text splitter. The PDFs have a rich, well-defined format that a character-count splitter would destroy.
 
-Current corpus: **10 PDFs** (*Listado de las Aves Argentinas*), ~1,743 chunks, 146 extracted images.
+**Volume classification** — each PDF is automatically classified as one of two types:
+
+- **Descriptive volumes (vols 1–9):** Contain prose species accounts (distribution, field records, taxonomy, conservation). Species blocks are delimited by headers of the form `COMMON NAME | Scientific name | STATUS`.
+- **Reference checklist (vol 10):** A numbered reference list — one row per species. No prose, no pipe headers.
+
+**Descriptive volume parsing:**
+1. All 9 descriptive PDFs are concatenated into a single text stream (species accounts cross volume boundaries — a species starting in vol 2 may continue in vol 3 with no new header).
+2. Repeating page headers (`LISTADO DE LAS AVES ARGENTINAS / TEMAS DE NATURALEZA Y CONSERVACIÓN…`) are stripped — without this, every chunk carries identical boilerplate that collapses retrieval quality.
+3. Species headers are detected with a regex; each species block is split independently using `RecursiveCharacterTextSplitter` (`chunk_size=1200`, `overlap=200`).
+4. Every sub-chunk from a species block carries `common_name`, `scientific_name`, and `status` in its payload — even mid-description continuation chunks that have no header of their own.
+5. A character-offset index maps each chunk back to its source PDF and page number.
+
+**Checklist parsing:**
+Each numbered row becomes one compact document carrying all four fields (number, Spanish name, scientific name, English name, status).
+
+**Embedding & storage:**
+Chunks are embedded with FastEmbed — dense (`sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`, 384 dims, multilingual) and sparse (BM25) — then stored in Qdrant.
+
+Current corpus: **10 PDFs** (*Listado de las Aves Argentinas*), ~2,509 chunks (~1,436 descriptive + ~1,073 checklist rows).
 
 Metadata stored per chunk:
 
@@ -379,18 +393,19 @@ Metadata stored per chunk:
 | `source` | Original PDF filename |
 | `page` | Page number |
 | `chunk_id` | UUID |
-| `image_filenames` | Images extracted from that page |
+| `common_name` | Spanish common name of the species |
+| `scientific_name` | Binomial scientific name |
+| `status` | Conservation/occurrence status codes (e.g. `N V`, `R`, `Ma`) |
+| `image_filenames` | Images extracted from the page(s) covered by the chunk |
 
 ### Retrieval — Hybrid Search with RRF
 
 At query time:
 
-1. The query is embedded with both FastEmbed dense and BM25 sparse models
-2. Qdrant runs both searches in parallel via `Prefetch`
-3. Results are fused with **Reciprocal Rank Fusion (RRF)** — dense captures semantic similarity, sparse captures keyword overlap
-4. Top-k chunks by fused score are returned and injected into the LLM prompt
-
-**Known limitation:** `BAAI/bge-small-en-v1.5` is English-optimised. Spanish queries degrade retrieval quality. Use the Groq provider with a multilingual model, or swap to `multilingual-e5-small`, to improve non-English retrieval.
+1. The query is embedded with both FastEmbed dense (`paraphrase-multilingual-MiniLM-L12-v2`) and BM25 sparse models. The dense model uses `query_embed()` for asymmetric query/passage encoding.
+2. Qdrant runs both searches in parallel via `Prefetch` (prefetch limit = `top_k × 5` per modality for broad recall)
+3. Results are fused with **Reciprocal Rank Fusion (RRF)** — dense captures semantic similarity, sparse captures keyword/exact-name overlap
+4. Top-k chunks by fused score are returned with full species metadata and injected into the LLM prompt
 
 ---
 
@@ -412,7 +427,7 @@ Prompt structure:
 [System prompt above]
 
 Context:
-[Source: filename.pdf, Page N]
+[Source: filename.pdf, Page N, Species: GARZA BRUJA CORONADA (Nyctanassa violacea), Status: N V]
 <chunk text>
 ---
 [Source: filename.pdf, Page M]
@@ -420,6 +435,8 @@ Context:
 
 Question: <user query>
 ```
+
+Species metadata (`common_name`, `scientific_name`, `status`) is included in the context header for every chunk that has it, so the model always knows which bird a fragment belongs to — even for mid-description continuation chunks with no species header in the text itself.
 
 **Why this reduces hallucinations:**
 - **"Strictly on the context"** suppresses the model's tendency to fill gaps with training data.
@@ -444,10 +461,10 @@ The agent uses four specialised prompts — one per decision node:
 
 | Node | Prompt role |
 |---|---|
-| `classify` | Routes to `"rag"` (bird facts) or `"direct"` (general/greetings) |
-| `grade` | Evaluates whether retrieved chunks are relevant (`good` / `poor`) |
-| `rewrite` | Rewrites the query with more specific scientific/Spanish terminology |
-| `generate_rag` | Same as the RAG system prompt — grounds answer in retrieved context |
+| `classify` | Returns two lines: (1) `rag` or `direct`, (2) extracted search entity — strips conversational filler (`"que me podes decir del"`, `"contame sobre"`, etc.) so only the species name or topic is embedded |
+| `grade` | Evaluates whether retrieved chunks contain enough descriptive prose. Grades `good` if even one chunk has multi-sentence descriptive content (distribution, records, taxonomy). Grades `poor` only if every chunk is a one-liner reference entry or completely off-topic. |
+| `rewrite` | Rewrites the query using more specific scientific or Spanish ornithological terminology to improve recall |
+| `generate_rag` | Grounds the answer strictly in retrieved context; cites source document and page number |
 
 ---
 
@@ -525,7 +542,7 @@ GROQ_MODEL=llama-3.3-70b-versatile
 | `GROQ_MODEL` | `llama-3.3-70b-versatile` | Groq model name |
 | `QDRANT_URL` | `http://localhost:6333` | Qdrant REST API URL |
 | `QDRANT_COLLECTION_NAME` | `documents` | Collection to store/query embeddings |
-| `EMBED_MODEL` | `BAAI/bge-small-en-v1.5` | FastEmbed dense model (auto-downloaded) |
+| `EMBED_MODEL` | `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` | FastEmbed dense model (auto-downloaded, multilingual, 384 dims) |
 | `RAG_TOP_K` | `8` | Default chunks to retrieve (1–20) |
 | `RAG_CHUNK_SIZE` | `1200` | Characters per chunk during ingestion |
 | `RAG_CHUNK_OVERLAP` | `200` | Overlap between consecutive chunks |
@@ -609,6 +626,8 @@ This project was built using **Claude Code** (Anthropic's CLI coding assistant) 
 **Limitations and corrections:**
 - Initial dependency draft used `qdrant-client[fastembed]` which pins `fastembed<0.8`. Resolved by using `fastembed>=0.8.0` standalone.
 - First Qdrant Docker image version was outdated; corrected after a live registry check.
+- Initial embedding model (`BAAI/bge-small-en-v1.5`) was English-only; Spanish queries degraded retrieval. Swapped to `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` — same vector dimensions, no Qdrant schema change needed.
+- Initial ingest used a generic `RecursiveCharacterTextSplitter` that ignored the PDF's rich species-header structure, producing poorly attributed chunks. Rewrote ingest as a structure-aware, two-parser pipeline.
 
 All generated code was reviewed, tested, and adjusted before committing.
 
