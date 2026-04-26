@@ -14,10 +14,11 @@ logger = get_logger(__name__)
 
 _RAG_SYSTEM_PROMPT = (
     "You are a knowledgeable ornithology assistant specialising in Argentine birds.\n"
-    "Answer the user's question based strictly on the context provided below.\n"
+    "Answer the user's question using only the context provided below.\n"
     "Cite the source document and page number when relevant.\n"
-    "If the context does not contain enough information to answer the question, say:\n"
-    '"I don\'t have enough information in the provided documents to answer this question."\n'
+    "If the context contains partial information, share what is available and note what is missing.\n"
+    "Only say 'I don't have enough information in the provided documents' if the context "
+    "contains absolutely nothing related to the question.\n"
     "Do not use prior knowledge beyond what is in the context."
 )
 
@@ -38,12 +39,18 @@ def _build_context(hits: list[ScoredPoint]) -> str:
     parts = []
     for hit in hits:
         p = hit.payload or {}
-        header = f"[Source: {p.get('source', 'unknown')}, Page {p.get('page', '?')}]"
+        meta = [f"Source: {p.get('source', 'unknown')}", f"Page {p.get('page', '?')}"]
+        if p.get("common_name"):
+            meta.append(f"Species: {p['common_name']} ({p.get('scientific_name', '')})")
+        if p.get("status"):
+            meta.append(f"Status: {p['status']}")
+        header = f"[{', '.join(meta)}]"
         parts.append(f"{header}\n{p.get('text', '')}")
     return "\n\n---\n\n".join(parts)
 
 
 class RAGService:
+    @observe(name="retrieve")
     async def retrieve(
         self,
         query: str,
@@ -51,14 +58,28 @@ class RAGService:
         source_filter: str | None = None,
     ) -> list[ScoredPoint]:
         resolved_top_k = top_k or settings.rag_top_k
-        query_vector = embedding_service.embed_one(query)
+        query_vector = embedding_service.query_embed_one(query)
         sparse_vector = sparse_embedding_service.embed_one(query)
-        return qdrant_adapter.hybrid_search(
+        hits = qdrant_adapter.hybrid_search(
             dense_vector=query_vector,
             sparse_vector=sparse_vector,
             top_k=resolved_top_k,
             source_filter=source_filter,
         )
+        langfuse_context.update_current_observation(
+            input=query,
+            output=[
+                {
+                    "source": h.payload.get("source"),
+                    "page": h.payload.get("page"),
+                    "score": round(h.score, 4),
+                    "text": h.payload.get("text", "")[:150],
+                }
+                for h in hits
+            ],
+            metadata={"top_k": resolved_top_k, "hits": len(hits)},
+        )
+        return hits
 
     def build_context(self, hits: list[ScoredPoint]) -> str:
         return _build_context(hits)
@@ -76,6 +97,8 @@ class RAGService:
                     "score": round(hit.score, 4),
                     "text_snippet": p.get("text", "")[:400],
                     "image_urls": [f"/images/{fn}" for fn in image_filenames],
+                    "common_name": p.get("common_name", ""),
+                    "scientific_name": p.get("scientific_name", ""),
                 }
             )
         return sources

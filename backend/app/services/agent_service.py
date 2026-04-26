@@ -13,18 +13,32 @@ logger = get_logger(__name__)
 
 _CLASSIFY_SYSTEM = (
     "You are a query router for an Argentine birds knowledge base.\n"
-    "Classify the question as:\n"
-    "- 'rag': requires specific facts from scientific bird documents "
-    "(species names, taxonomy, distribution, conservation status, etc.)\n"
-    "- 'direct': can be answered from general knowledge "
-    "(greetings, general questions, non-bird topics).\n"
-    "Reply with exactly one word: rag or direct"
+    "Respond with EXACTLY TWO lines:\n"
+    "Line 1: 'rag' or 'direct'\n"
+    "  rag = question needs facts from scientific bird documents (species, taxonomy, distribution, conservation)\n"
+    "  direct = greeting, general chat, or topic unrelated to Argentine birds\n"
+    "Line 2: the key search terms — strip ALL conversational filler\n"
+    "  Remove phrases like: 'que me podes decir', 'contame sobre', 'sabes algo del',\n"
+    "  'que sabes de', 'hablame del', 'tenes algo de', 'dame info sobre', etc.\n"
+    "  Keep only: species name, scientific name, location, or topic\n\n"
+    "Examples:\n"
+    "Input: Que me podes decir del tero?\n"
+    "rag\ntero\n\n"
+    "Input: Contame sobre la garza bruja coronada\n"
+    "rag\ngarza bruja coronada\n\n"
+    "Input: What can you tell me about Vanellus chilensis?\n"
+    "rag\nVanellus chilensis\n\n"
+    "Input: Hola como estas?\n"
+    "direct\ngreeting"
 )
 
 _GRADE_SYSTEM = (
-    "You evaluate whether retrieved document chunks are relevant to answer a question.\n"
-    "If the retrieved context contains information that could help answer the question, "
-    "reply 'good'. If the context is clearly off-topic or empty, reply 'poor'.\n"
+    "Does the retrieved context contain ENOUGH information to answer the question?\n"
+    "Look at ALL chunks. If even ONE chunk has multiple sentences of descriptive content "
+    "(distribution, field records, taxonomy, conservation notes), reply 'good'.\n"
+    "Reply 'poor' ONLY if EVERY chunk is a brief one-liner reference entry "
+    "(like '212. Tero (Vanellus chilensis) / Southern Lapwing') "
+    "or if ALL chunks are about completely different topics.\n"
     "Reply with exactly one word: good or poor"
 )
 
@@ -43,10 +57,11 @@ _DIRECT_SYSTEM = (
 
 _RAG_SYSTEM = (
     "You are a knowledgeable ornithology assistant specialising in Argentine birds.\n"
-    "Answer the user's question based strictly on the context provided below.\n"
+    "Answer the user's question using only the context provided below.\n"
     "Cite the source document and page number when relevant.\n"
-    "If the context does not contain enough information to answer the question, say:\n"
-    "'I don't have enough information in the provided documents to answer this question.'\n"
+    "If the context contains partial information, share what is available and note what is missing.\n"
+    "Only say 'I don't have enough information in the provided documents' if the context "
+    "contains absolutely nothing related to the question.\n"
     "Do not use prior knowledge beyond what is in the context."
 )
 
@@ -86,13 +101,20 @@ async def _llm_call(system: str, user: str) -> str:
 @observe()
 async def classify_node(state: AgentState) -> dict:
     raw = await _llm_call(_CLASSIFY_SYSTEM, state["query"])
-    route = "rag" if "rag" in raw.lower() else "direct"
+    lines = [l.strip() for l in raw.strip().splitlines() if l.strip()]
+    route = "rag" if lines and "rag" in lines[0].lower() else "direct"
+    # Use the extracted search terms when available; fall back to original query
+    if route == "rag" and len(lines) > 1 and lines[1].lower() not in ("rag", "direct", ""):
+        current_query = lines[1]
+    else:
+        current_query = state["query"]
     langfuse_context.update_current_observation(
         input=state["query"],
         output=route,
+        metadata={"current_query": current_query},
     )
-    logger.info("agent.classify route=%s", route)
-    return {"current_query": state["query"], "route": route}
+    logger.info("agent.classify route=%s query=%r -> %r", route, state["query"], current_query)
+    return {"current_query": current_query, "route": route}
 
 
 @observe()
@@ -100,7 +122,11 @@ async def retrieve_node(state: AgentState) -> dict:
     hits = await rag_service.retrieve(state["current_query"])
     langfuse_context.update_current_observation(
         input=state["current_query"],
-        output=f"{len(hits)} chunks retrieved",
+        output=[
+            {"source": h.payload.get("source"), "page": h.payload.get("page"), "score": round(h.score, 4)}
+            for h in hits
+        ],
+        metadata={"hits": len(hits)},
     )
     logger.info("agent.retrieve hits=%d query=%r", len(hits), state["current_query"])
     return {"hits": hits}

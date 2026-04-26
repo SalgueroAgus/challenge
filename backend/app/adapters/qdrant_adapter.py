@@ -43,8 +43,8 @@ class QdrantAdapter:
         response = self._client.query_points(
             collection_name=collection,
             prefetch=[
-                Prefetch(query=dense_vector, using="dense", limit=top_k * 2),
-                Prefetch(query=sparse_vector, using="sparse", limit=top_k * 2),
+                Prefetch(query=dense_vector, using="dense", limit=top_k * 5),
+                Prefetch(query=sparse_vector, using="sparse", limit=top_k * 5),
             ],
             query=FusionQuery(fusion=Fusion.RRF),
             query_filter=query_filter,

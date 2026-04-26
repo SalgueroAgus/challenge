@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     qdrant_collection_name: str = "documents"
 
     # Embeddings
-    embed_model: str = "BAAI/bge-small-en-v1.5"
+    embed_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
     # RAG
     rag_top_k: int = 8
