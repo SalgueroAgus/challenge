@@ -19,22 +19,29 @@ export function SourceCard({ source, index }: Props) {
           <span className="shrink-0 text-xs bg-gray-200 rounded px-1.5 py-0.5 text-gray-500 font-medium">
             {index + 1}
           </span>
-          <span className="truncate text-gray-700 font-medium">{source.source}</span>
-          {source.page != null && (
-            <span className="shrink-0 text-gray-400 text-xs">p.{source.page}</span>
-          )}
+          <span className="min-w-0">
+            {source.common_name && (
+              <span className="block text-gray-800 font-semibold text-xs uppercase tracking-wide">
+                {source.common_name}
+                <span className="font-normal normal-case tracking-normal text-gray-500"> ({source.scientific_name})</span>
+              </span>
+            )}
+            <span className="flex items-center gap-1.5">
+              <span className="truncate text-gray-700 font-medium">{source.source}</span>
+              {source.page != null && (
+                <span className="shrink-0 text-gray-400 text-xs">p.{source.page}</span>
+              )}
+            </span>
+          </span>
         </span>
-        <span className="flex items-center gap-2 shrink-0">
-          <span className="text-xs text-gray-400">{(source.score * 100).toFixed(0)}%</span>
-          <svg
-            className={`w-3.5 h-3.5 text-gray-400 transition-transform duration-150 ${open ? 'rotate-180' : ''}`}
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
-        </span>
+        <svg
+          className={`w-3.5 h-3.5 text-gray-400 transition-transform duration-150 shrink-0 ${open ? 'rotate-180' : ''}`}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
       </button>
 
       {open && (

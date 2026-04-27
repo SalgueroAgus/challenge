@@ -17,6 +17,8 @@ def _mock_rag_result(answer: str = "The Rufous Hornero is Argentina's national b
                 "score": 0.92,
                 "text_snippet": "The Rufous Hornero builds oven-shaped nests...",
                 "image_urls": ["/images/birds_part1_p4_1.png"],
+                "common_name": "Hornero",
+                "scientific_name": "Furnarius rufus",
             }
         ],
         "meta": {"latency_ms": 800, "hits": 1},
@@ -43,6 +45,8 @@ async def test_rag_query_returns_answer_and_sources(auth_headers):
     assert isinstance(data["sources"], list)
     assert len(data["sources"]) == 1
     assert data["sources"][0]["image_urls"] == ["/images/birds_part1_p4_1.png"]
+    assert data["sources"][0]["common_name"] == "Hornero"
+    assert data["sources"][0]["scientific_name"] == "Furnarius rufus"
     assert "meta" in data
 
 
