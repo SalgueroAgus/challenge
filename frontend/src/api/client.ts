@@ -1,34 +1,52 @@
 const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
 
-// INTENTIONAL TRADEOFF: credentials are hardcoded in this bundle.
-// In a production app the frontend would have a login screen — the user would
-// supply their password, the server would issue a token, and no secret would
-// ever live in client-side code. For this demo we skip the login screen and
-// hard-code a single service account so the UI stays simple while the API
-// still enforces JWT auth for every other caller (curl, Postman, etc.).
-// See README § Authentication for the full explanation.
-const AUTH_USERNAME = 'admin'
-const AUTH_PASSWORD = 'changeme'
-
 let _token: string | null = null
+let _onUnauthorized: (() => void) | null = null
 
-async function getToken(): Promise<string> {
-  if (_token) return _token
+/** Called by AuthContext to inject the token after a successful login. */
+export function setToken(token: string): void {
+  _token = token
+}
+
+/** Called by AuthContext to clear the token on logout or 401. */
+export function clearToken(): void {
+  _token = null
+}
+
+/** Registered by AuthContext so API calls can trigger a logout on token expiry. */
+export function onUnauthorized(cb: () => void): void {
+  _onUnauthorized = cb
+}
+
+export async function loginRequest(
+  username: string,
+  password: string,
+): Promise<string> {
   const res = await fetch(`${API_BASE}/api/v1/auth/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: `username=${encodeURIComponent(AUTH_USERNAME)}&password=${encodeURIComponent(AUTH_PASSWORD)}`,
+    body: `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`,
   })
-  if (!res.ok) throw new Error('Authentication failed — check API credentials')
-  _token = (await res.json()).access_token
-  return _token!
+  if (!res.ok) throw new Error('Invalid username or password')
+  const data = await res.json()
+  return data.access_token as string
 }
 
-async function authHeaders(): Promise<Record<string, string>> {
+function authHeaders(): Record<string, string> {
   return {
     'Content-Type': 'application/json',
-    Authorization: `Bearer ${await getToken()}`,
+    Authorization: `Bearer ${_token ?? ''}`,
   }
+}
+
+async function apiFetch(url: string, init: RequestInit): Promise<Response> {
+  const res = await fetch(url, { ...init, headers: authHeaders() })
+  if (res.status === 401) {
+    clearToken()
+    _onUnauthorized?.()
+    throw new Error('Session expired — please log in again')
+  }
+  return res
 }
 
 export interface RAGSource {
@@ -61,9 +79,8 @@ export interface AgentResult {
 }
 
 export async function sendChat(message: string, sessionId: string): Promise<ChatResult> {
-  const res = await fetch(`${API_BASE}/api/v1/chat`, {
+  const res = await apiFetch(`${API_BASE}/api/v1/chat`, {
     method: 'POST',
-    headers: await authHeaders(),
     body: JSON.stringify({ message, session_id: sessionId }),
   })
   if (!res.ok) throw new Error(`Server error ${res.status}`)
@@ -71,9 +88,8 @@ export async function sendChat(message: string, sessionId: string): Promise<Chat
 }
 
 export async function sendRagQuery(query: string): Promise<RagResult> {
-  const res = await fetch(`${API_BASE}/api/v1/rag-query`, {
+  const res = await apiFetch(`${API_BASE}/api/v1/rag-query`, {
     method: 'POST',
-    headers: await authHeaders(),
     body: JSON.stringify({ query }),
   })
   if (!res.ok) throw new Error(`Server error ${res.status}`)
@@ -81,9 +97,8 @@ export async function sendRagQuery(query: string): Promise<RagResult> {
 }
 
 export async function sendAgentQuery(query: string): Promise<AgentResult> {
-  const res = await fetch(`${API_BASE}/api/v1/agent`, {
+  const res = await apiFetch(`${API_BASE}/api/v1/agent`, {
     method: 'POST',
-    headers: await authHeaders(),
     body: JSON.stringify({ query }),
   })
   if (!res.ok) throw new Error(`Server error ${res.status}`)
