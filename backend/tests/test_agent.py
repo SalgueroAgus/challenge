@@ -16,6 +16,8 @@ def _mock_agent_result(route: str = "rag", retries: int = 0) -> dict:
                 "score": 0.92,
                 "text_snippet": "The Rufous Hornero builds oven-shaped nests...",
                 "image_urls": ["/images/birds_part1_p4_1.png"],
+                "common_name": "Hornero",
+                "scientific_name": "Furnarius rufus",
             }
         ]
         if route == "rag"
@@ -50,6 +52,8 @@ async def test_agent_rag_route_returns_answer_and_sources(auth_headers):
     assert isinstance(data["sources"], list)
     assert len(data["sources"]) == 1
     assert data["sources"][0]["image_urls"] == ["/images/birds_part1_p4_1.png"]
+    assert data["sources"][0]["common_name"] == "Hornero"
+    assert data["sources"][0]["scientific_name"] == "Furnarius rufus"
     assert data["meta"]["retries"] == 0
 
 

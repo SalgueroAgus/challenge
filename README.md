@@ -72,6 +72,7 @@ graph TD
 
     subgraph Infra["Infrastructure"]
         Ollama["Ollama :11434\nqwen3.5:4b"]
+        Groq["Groq API\nllama-3.3-70b-versatile"]
         Qdrant["Qdrant :6333\nVector DB"]
         LF["LangFuse :3000\nTracing"]
     end
@@ -87,7 +88,7 @@ graph TD
     UI_RAG -- "POST /api/v1/rag-query" --> RAG
     UI_Agent -- "POST /api/v1/agent" --> Agent
 
-    Chat --> LLMService --> LLMAdapter --> Ollama
+    Chat --> LLMService --> LLMAdapter --> Ollama & Groq
     RAG --> RAGService --> EmbedService --> QdrantAdapter --> Qdrant
     RAGService --> LLMAdapter
     Agent --> AgentService --> RAGService

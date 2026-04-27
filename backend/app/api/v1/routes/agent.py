@@ -20,6 +20,8 @@ class AgentSource(BaseModel):
     score: float
     text_snippet: str
     image_urls: list[str]
+    common_name: str = ""
+    scientific_name: str = ""
 
 
 class AgentMeta(BaseModel):

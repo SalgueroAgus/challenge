@@ -56,6 +56,8 @@ export interface RAGSource {
   score: number
   text_snippet: string
   image_urls: string[]
+  common_name: string
+  scientific_name: string
 }
 
 export interface ChatResult {
