@@ -111,6 +111,14 @@ classify → "rag"    → retrieve → grade → "good"              → generat
 
 ---
 
+## Screenshots
+
+| Login | Agent — RAG Q&A with sources |
+|---|---|
+| ![Login](assets/screenshots/login-screen.png) | ![Agent chat](assets/screenshots/agent-chat.png) |
+
+---
+
 ## Tech Stack
 
 | Layer | Tool | Why |
@@ -211,6 +219,8 @@ make up         # subsequent runs
 | LangFuse | http://localhost:3000 |
 
 > **Note:** The frontend image bakes in `VITE_API_BASE_URL=http://localhost:8000` at build time. Ollama must be running on the host — it is not included in the compose file.
+
+![Docker Desktop — full stack running](assets/screenshots/docker.png)
 
 ---
 
@@ -507,6 +517,10 @@ LANGFUSE_HOST=http://localhost:3000
 Restart the backend: `make dev` or `docker compose up -d --build backend`.
 
 </details>
+
+![LangFuse dashboard — latency percentiles per trace type](assets/screenshots/langfuse-dashboard.png)
+
+![LangFuse trace detail — agent-run with per-node spans](assets/screenshots/langfuse-tracing.png)
 
 ### What gets traced
 
