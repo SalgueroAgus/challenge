@@ -21,7 +21,6 @@ Built as a technical challenge to demonstrate GenAI development, API design, and
 - [Observability — LangFuse](#observability--langfuse)
 - [Configuration](#configuration)
 - [Testing](#testing)
-- [Cloud Deployment](#cloud-deployment)
 - [GenAI Coding Assistants](#genai-coding-assistants)
 
 ---
@@ -118,7 +117,8 @@ classify → "rag"    → retrieve → grade → "good"              → generat
 |---|---|---|
 | API framework | FastAPI 0.115+ | Async-native, automatic OpenAPI docs, Pydantic-first |
 | Runtime | Python 3.12 | Latest stable, full type narrowing support |
-| Dependency manager | uv | 10–100× faster than pip, reproducible lock file |
+| Dependency manager (backend) | uv | 10–100× faster than pip, reproducible lock file |
+| Dependency manager (frontend) | npm | Standard Node package manager |
 | LLM runtime | Ollama (local) | Zero-cost local inference, OpenAI-compatible API |
 | LLM model | qwen3.5:4b | Strong instruction-following at 4B params, fast on CPU/Apple Silicon |
 | LLM cloud alt | Groq (free tier) | `llama-3.3-70b-versatile` — ~10× faster than local 4B, no credit card |
@@ -321,6 +321,8 @@ Ask a question grounded in the ingested documents.
       "page": 4,
       "score": 0.92,
       "text_snippet": "El Hornero fue declarado ave nacional...",
+      "common_name": "HORNERO",
+      "scientific_name": "Furnarius rufus",
       "image_urls": ["/images/LISTADO_DE_LAS_AVES_ARGENTINAS-1_p4_1.jpeg"]
     }
   ],
@@ -345,7 +347,18 @@ Agentic Q&A. The LangGraph agent classifies each question, decides whether to se
 ```json
 {
   "answer": "...",
-  "sources": [...],
+  "sources": [
+    {
+      "chunk_id": "...",
+      "source": "...",
+      "page": 1,
+      "score": 0.87,
+      "text_snippet": "...",
+      "common_name": "...",
+      "scientific_name": "...",
+      "image_urls": []
+    }
+  ],
   "route": "rag",
   "meta": {"latency_ms": 4200, "retries": 0}
 }
@@ -580,41 +593,6 @@ All tests mock the service layer and run without a live Ollama or Qdrant instanc
 
 ---
 
-## Cloud Deployment
-
-<details>
-<summary>Azure Container Apps (recommended path)</summary>
-
-```bash
-# 1. Build and push images
-docker build -t <registry>/genai-backend:latest ./backend
-docker push <registry>/genai-backend:latest
-
-# 2. Deploy Qdrant with persistent volume
-az containerapp create \
-  --name qdrant \
-  --image qdrant/qdrant:v1.17.1 \
-  --target-port 6333
-
-# 3. Deploy backend
-az containerapp create \
-  --name genai-backend \
-  --image <registry>/genai-backend:latest \
-  --env-vars \
-    QDRANT_URL=<qdrant-internal-url> \
-    OLLAMA_BASE_URL=<ollama-url-or-groq-equivalent> \
-    LLM_PROVIDER=groq \
-    GROQ_API_KEY=<key>
-```
-
-For Ollama in the cloud use a GPU-enabled VM, or substitute with Groq by setting `LLM_PROVIDER=groq`.
-
-**Current status:** Local only — no public URL deployed.
-
-</details>
-
----
-
 ## GenAI Coding Assistants
 
 This project was built using **Claude Code** (Anthropic's CLI coding assistant) as the primary AI-assisted development tool.
@@ -673,13 +651,17 @@ Challenge/
 │   │   └── test_hybrid_search.py
 │   ├── Dockerfile
 │   ├── pyproject.toml
+│   ├── uv.lock
 │   └── .env.example
 ├── frontend/
 │   ├── src/
 │   │   ├── App.tsx                 # Tab switcher (Chat / RAG Q&A / Agent)
 │   │   ├── types.ts
 │   │   ├── api/client.ts           # Typed fetch wrappers — no direct LLM calls
+│   │   ├── context/
+│   │   │   └── AuthContext.tsx     # JWT state — login, logout, token lifecycle
 │   │   └── components/
+│   │       ├── LoginScreen.tsx     # Login form — exchanges credentials for JWT
 │   │       ├── ConversationPane.tsx
 │   │       ├── MessageBubble.tsx   # Markdown rendering, source cards, route badge
 │   │       ├── SourceCard.tsx      # Collapsible source with images
@@ -687,6 +669,8 @@ Challenge/
 │   ├── Dockerfile                  # Multi-stage: node build → nginx serve
 │   ├── nginx.conf
 │   └── package.json
+├── scripts/
+│   └── pre-push.sh                 # Git pre-push hook — runs lint + format + tests
 ├── data/                           # 10 PDFs — Listado de las Aves Argentinas
 ├── docker-compose.yml              # qdrant + backend + frontend + langfuse + postgres
 ├── Makefile
