@@ -18,7 +18,10 @@ logger = get_logger(__name__)
 
 class QdrantAdapter:
     def __init__(self) -> None:
-        self._client = QdrantClient(url=settings.qdrant_url)
+        self._client = QdrantClient(
+            url=settings.qdrant_url,
+            api_key=settings.qdrant_api_key or None,
+        )
 
     def hybrid_search(
         self,

@@ -352,7 +352,7 @@ def main() -> None:
     )
     embed_svc = EmbeddingService()
     sparse_embed_svc = SparseEmbeddingService()
-    client = QdrantClient(url=settings.qdrant_url)
+    client = QdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_api_key or None)
 
     vector_size = len(embed_svc.embed_one("probe"))
     logger.info("Detected vector size: %d", vector_size)
