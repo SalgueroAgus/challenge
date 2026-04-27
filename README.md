@@ -251,7 +251,7 @@ curl -X POST http://localhost:8000/api/v1/chat \
   -d '{"message": "Hello"}'
 ```
 
-**Frontend note:** The frontend hardcodes the service account credentials and auto-exchanges them for a JWT on the first request — no login screen. In a production app the user would supply the password so no secret lives in client-side code. The tradeoff is documented here; the API enforces JWT auth for every other caller (curl, Postman, external integrations).
+**Frontend:** The UI shows a login screen on first load. Enter the credentials above, the browser exchanges them for a JWT, and the token is stored in `sessionStorage` for the duration of the session. No credentials are hardcoded in the bundle. The token is automatically cleared on expiry (24 h) or on sign-out, returning the user to the login screen.
 
 ---
 

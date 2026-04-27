@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { ConversationPane } from './components/ConversationPane'
+import { LoginScreen } from './components/LoginScreen'
+import { AuthProvider, useAuth } from './context/AuthContext'
 
 type Tab = 'chat' | 'rag' | 'agent'
 
@@ -9,9 +11,12 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'agent', label: 'Agent' },
 ]
 
-export default function App() {
+function MainApp() {
+  const { isAuthenticated, logout } = useAuth()
   const [tab, setTab] = useState<Tab>('chat')
   const [sessionId] = useState(() => crypto.randomUUID())
+
+  if (!isAuthenticated) return <LoginScreen />
 
   return (
     <div className="h-screen flex flex-col bg-white font-sans antialiased">
@@ -23,23 +28,31 @@ export default function App() {
           </span>
         </div>
 
-        <nav className="flex gap-1 bg-gray-100 p-1 rounded-xl" role="tablist">
-          {TABS.map(t => (
-            <button
-              key={t.id}
-              role="tab"
-              aria-selected={tab === t.id}
-              onClick={() => setTab(t.id)}
-              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all duration-150 ${
-                tab === t.id
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </nav>
+        <div className="flex items-center gap-3">
+          <nav className="flex gap-1 bg-gray-100 p-1 rounded-xl" role="tablist">
+            {TABS.map(t => (
+              <button
+                key={t.id}
+                role="tab"
+                aria-selected={tab === t.id}
+                onClick={() => setTab(t.id)}
+                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all duration-150 ${
+                  tab === t.id
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </nav>
+          <button
+            onClick={logout}
+            className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            Sign out
+          </button>
+        </div>
       </header>
 
       {/* All three panes stay mounted to preserve history */}
@@ -55,5 +68,13 @@ export default function App() {
         </div>
       </main>
     </div>
+  )
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <MainApp />
+    </AuthProvider>
   )
 }
